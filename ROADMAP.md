@@ -170,7 +170,56 @@ _Local: all three M3a–c subcommands work end-to-end against fixtures, smoke te
 
 ---
 
-## M5 — Hardening
+## M5 — Sealing: declarative stamps + release orchestration
+
+**Goal:** turn release-cutting into one hanko invocation.
+A repo declares its source-side stamp targets and release hooks in
+`.hanko.yaml`; `hanko seal` runs the whole rite (stamp → hooks → commit →
+tag → push) atomically.
+See `docs/hanko-yaml.md` for the schema sketch.
+
+This is the milestone that turns hanko from "version+stamper primitives"
+into "release tool" without taking on changelog generation or other
+adjacent scope.
+
+### M5a — `.hanko.yaml` loader
+
+- [ ] Parse the version-computation sections (existing sketch: `tag-prefix`, `mode`, `dirty-suffix`, `initial-version`, `on-shallow`, `branches`).
+- [ ] Wire those into the existing `version.Compute` path; today's hard-coded defaults stay as the no-config fallback.
+- [ ] Schema validation at startup; clear error pointing at the offending key.
+- [ ] JSON Schema (generated from the Go struct) for editor completion.
+
+### M5b — `stamp-targets:` + generic stamp engine
+
+- [ ] Per-format line-based stampers behind a unified engine: `toml`, `yaml`, `json`, `nix`, `plain`.
+  Reuse the existing helm/nix line-pattern approach; canonical "key on its own line, scalar value" is the supported shape.
+- [ ] Nested keys via dotted path (`project.version` for `pyproject.toml`'s `[project]` section, etc.).
+- [ ] List-valued `key:` for multi-key targets (Chart.yaml's `version`+`appVersion`).
+- [ ] `hanko stamp` (no args) reads `stamp-targets:` and applies all targets.
+  Keep `stamp helm` / `stamp nix` as positional-arg shorthand for one-off use.
+- [ ] `hanko stamp --dry-run` reads the config and emits per-target before/after diffs.
+
+### M5c — `hanko seal`
+
+- [ ] Implements the documented pipeline: pre-flight refusal (dirty / prerelease), stamp, run `pre-commit:` hooks, single commit, tag, push.
+- [ ] Template variables (`{semver}`, `{full}`, `{major}` etc.) expanded in `commit-message:` and hook command strings.
+- [ ] Pre-release refusal mirrors D-011; opt out via `seal.refuse-prerelease: false`.
+- [ ] `hanko seal --dry-run` walks the pipeline without mutating: shows the stamp diffs, lists the hooks that would run, prints the commit message and target tag.
+- [ ] Smoke + flow coverage: pyproject.toml + Chart.yaml in one repo; pre-commit hook that generates CHANGELOG.md via `git-cliff`; verify the resulting single commit contains all expected files.
+
+### M5d — Out of scope for v1 (capture, defer)
+
+- AST-based round-trip mutation per format (would replace the line-based engine if a real file shape forces it).
+- Hook stdout capture/log forwarding policy beyond "forward verbatim."
+- A `--target NAME` selector for stamping one declared target.
+  Needs a naming convention; revisit when there's demand.
+- Presets (`preset: gitversion-compat`, etc.).
+
+**Exit criteria:** at least one downstream service repo defines `.hanko.yaml`, runs `hanko seal` from a `workflow_dispatch` GH Actions job, and the resulting commit + tag + pushed-artifact set is what a human would have produced manually.
+
+---
+
+## M6 — Hardening
 
 **Goal:** stop hand-waving the edge cases.
 
@@ -187,11 +236,11 @@ _Local: all three M3a–c subcommands work end-to-end against fixtures, smoke te
 
 ---
 
-## M6 — v1.0.0
+## M7 — v1.0.0
 
 **Definition of done for v1:**
 
-- All M0–M5 items shipped.
+- All M0–M6 items shipped.
 - Used in production CI by at least 3 internal repos.
 - Output stability promise: SemVer fields and JSON shape are frozen.
   New fields are additive; renames / removals require a v2.

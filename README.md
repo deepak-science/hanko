@@ -17,7 +17,7 @@ It's a label-reader, not a state-machine step.
 
 ## Status
 
-M0–M3 shipped: real version computation, idempotent tagging, and stamping for `go-ldflags` / `docker tags` / `docker labels` / `helm` work end-to-end against unit, smoke, and flow tests.
+M0–M3 shipped: real version computation, idempotent tagging, and stamping for `go-ldflags` / `docker tags` / `docker labels` / `helm` / `nix` work end-to-end against unit, smoke, and flow tests.
 See [ROADMAP.md](./ROADMAP.md) for what's left before v1, and [docs/design-decisions.md](./docs/design-decisions.md) for open design questions.
 
 ## Quick start

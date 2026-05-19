@@ -100,6 +100,150 @@ branches:
     label: "{branch}"
 ```
 
+## Stamp targets (release-time source mutation)
+
+Hanko-managed apps usually have one or more files that record the current
+version inside the repo: `pyproject.toml`, `Cargo.toml`, `package.json`,
+`Chart.yaml`, `flake.nix`, plain `VERSION` files.
+At release time, those files get bumped in lock-step with the new git tag.
+
+The `stamp-targets:` section declares which files to mutate.
+Each target is `(path, format, key)`.
+A single `hanko stamp` invocation walks the list and applies all of them.
+
+```yaml
+stamp-targets:
+  - path: pyproject.toml
+    format: toml
+    key: project.version
+
+  - path: Chart.yaml
+    format: yaml
+    key: [version, appVersion]
+
+  - path: package.json
+    format: json
+    key: version
+
+  - path: flake.nix
+    format: nix
+    key: version
+
+  - path: VERSION
+    format: plain    # whole file is the value
+```
+
+### Engine choice — line-based first
+
+Hanko stamps line-based, not via AST round-trip.
+This is the same strategy used today for `Chart.yaml` and (just landed)
+`flake.nix`: a regex finds the `<key> = "<val>"` line, the value is
+substituted, comments and ordering survive untouched.
+The cost is strictness — files must place the targeted key on its own line
+in a canonical shape.
+That's nearly universal in formatter-output configs (`pyproject.toml` from
+poetry/hatch, `Cargo.toml` from cargo, `package.json` from npm), so the loss
+is small and the implementation stays trivial.
+
+AST-based engines per format are a follow-up if a real file shape forces it.
+Concretely, each format gets one line-pattern + one comment-handling rule;
+that's it.
+
+### Field paths
+
+`key` is a dotted path into the file's structure.
+For top-level scalars (`version` in `package.json`) the path is a single
+segment.
+For nested keys (`project.version` in `pyproject.toml`) the path walks the
+section headers.
+A list value (`[version, appVersion]`) means "stamp all of these to the same
+new value" — useful for Chart.yaml where both keys conventionally hold the
+same semver.
+
+### What gets stamped
+
+The new value is `Version.SemVer` (e.g. `1.2.3`, or `1.2.3-feature-foo.4` on
+a feature branch).
+**Pre-release versions stamp identically to release versions** — `stamp` is
+an identity-application step, not a release decision; the release decision
+is the orchestrating `seal` command (next section), which can refuse
+pre-releases by default.
+
+## Sealing — orchestrated releases
+
+`hanko seal` is the higher-level rite: stamp targets, run user-declared
+hooks (changelog generation, lockfile regen, anything that produces files
+to fold into the release commit), commit, tag, push.
+Atomic on success; the worktree is clean again at the end (or stayed clean,
+if there was nothing to do).
+
+```yaml
+seal:
+  # commands run after stamping, before the release commit. CWD is repo root.
+  # Each command runs in sequence; non-zero exit aborts the seal.
+  pre-commit:
+    - git-cliff --tag v{semver} --output CHANGELOG.md
+    - poetry lock --no-update
+
+  # commit-message template. `{...}` interpolates fields from the computed Version.
+  commit-message: "Release {semver}"
+
+  # remote to push commit + tag to. Same as `hanko tag --remote`.
+  push-remote: origin
+
+  # whether `seal` will refuse to operate on a pre-release version.
+  # Mirrors D-011 (`hanko tag` refuses prereleases unconditionally);
+  # set to `false` if a repo really wants to seal hotfix prereleases.
+  refuse-prerelease: true
+```
+
+### Template variables
+
+`{...}` placeholders expand from the computed `Version` struct, mirroring
+the field set already exposed by `hanko version --format env`:
+
+| Placeholder       | Maps to                |
+| ----------------- | ---------------------- |
+| `{semver}`        | `Version.SemVer`       |
+| `{full}`          | `Version.FullSemVer`   |
+| `{major}`         | `Version.Major`        |
+| `{minor}`         | `Version.Minor`        |
+| `{patch}`         | `Version.Patch`        |
+| `{major-minor}`   | `"{major}.{minor}"`    |
+| `{branch}`        | `Version.BranchName`   |
+| `{short-sha}`     | `Version.ShortSha`     |
+| `{is-prerelease}` | `Version.IsPreRelease` |
+
+Available anywhere strings appear in `seal:` — commit-message,
+pre-commit command args.
+
+### What seal does, in order
+
+1. **Pre-flight**.
+   Refuse if the worktree is dirty (the seal is meant to be atomic; pre-existing dirt would get folded into the release commit).
+   Refuse if `refuse-prerelease: true` and the computed version is a pre-release.
+2. **Stamp** all declared targets.
+3. **Run hooks** from `pre-commit:` in declared order, in the repo root.
+   Each command sees the post-stamp worktree.
+   Any stdout is forwarded.
+4. **Commit** everything in the working tree (the union of stamp mutations + hook outputs).
+   Single commit, message from `commit-message:`.
+5. **Tag** via the same logic as `hanko tag` (annotated tag, prefix follows D-002).
+6. **Push** the commit + tag to `push-remote:`.
+
+Failures at any step leave the worktree as-is so the user can inspect.
+No partial commit, no partial push.
+
+### Why not bake `git-cliff` (or similar) in?
+
+Hanko owns version computation and stamping.
+Changelog generation is a different tool with its own opinions
+(conventional-commits parsing, templating, grouping).
+Folding it in dilutes scope and forces every hanko user to live with one
+project's choice of changelog style.
+The hook mechanism lets users compose whichever tool they want without
+hanko taking sides.
+
 ## Worked examples
 
 - Repo has a `.hanko.yaml` that drops `release/x.y` mapping → the catch-all `feature` rule handles all non-main branches uniformly.
@@ -107,6 +251,21 @@ branches:
 - Repo with `tag-prefix: '^release-(.+)$'` consumes existing `release-1.2.3` tags without renaming them.
 - Repo with `dirty-suffix: false` and `on-shallow: refuse` is the "strict CI" preset.
   Likely the default in our `actions-runner-image`.
+
+### Sealing examples
+
+- **Python service.**
+  `stamp-targets:` lists `pyproject.toml` (toml, `project.version`) and `Chart.yaml` (yaml, `[version, appVersion]`).
+  `seal.pre-commit` runs `poetry lock --no-update` and `git-cliff --tag v{semver} --output CHANGELOG.md`.
+  One `hanko seal` invocation produces a single release commit + tag with the bumped manifests, regenerated lockfile, and a fresh changelog entry.
+- **Helm-only chart repo.**
+  `stamp-targets:` lists just `Chart.yaml`.
+  No `seal.pre-commit` hooks.
+  `hanko seal` reduces to "bump Chart.yaml, commit, tag, push" — same as today's manual flow.
+- **CI-driven release.**
+  A `workflow_dispatch` GH Actions job runs `hanko seal`.
+  Hanko handles the full sequence; the workflow's only job is "have credentials and call hanko."
+  Pre-existing dirt aborts the workflow before any mutation.
 
 ## Open questions before implementation
 
@@ -120,8 +279,26 @@ branches:
 - **Per-branch tag prefix?**
   Some teams use `release-x.y.z` for pre-releases and `v.x.y.z` for releases.
   Probably YAGNI for v1.
+- **Stamp-target dry-run UX.**
+  Should `hanko stamp --dry-run` (no args, reads config) emit a per-target diff like the existing per-format `--dry-run`?
+  Almost certainly yes; the noise is fine because the dry-run is opt-in.
+- **What does `hanko stamp <name>` do?**
+  Looks up a single declared target by `path` or a future `name:` field?
+  Useful for "rebuild just Chart.yaml" flows; needs naming policy.
+- **Where do hook stdouts go?**
+  Forward verbatim, capture to log, or quiet-by-default with `--verbose`?
+  Leaning forward verbatim since seal is already an explicit user act.
+- **Hook failure recovery.**
+  If a hook fails partway through, the worktree is left mid-mutation.
+  `hanko seal --abort` to revert? Or trust the user with `git checkout -- .`?
+  Leaning trust-the-user; an `--abort` is documentation more than logic.
+- **`stamp-targets` discovery for repos without `.hanko.yaml`.**
+  Today's `stamp helm <chart-dir>` and `stamp nix <file>` accept positional paths.
+  Probably keep them as shorthand even after config-driven `stamp` lands; the positional form is "I know what I want, just do it."
 
 ## Cross-references
 
-- Resolves `docs/design-decisions.md`: **D-002** (tag prefix), partially **D-003** (sanitisation lives in code, but per-branch label templates extend it), **D-004** (shallow-clone behaviour becomes config-driven).
+- Resolves `docs/design-decisions.md`: partially **D-003** (sanitisation lives in code, but per-branch label templates extend it), **D-004** (shallow-clone behaviour becomes config-driven).
+  D-002 (tag prefix) was resolved without `.hanko.yaml` — follow-existing-repo-shape covers the common case; per-branch tag prefixes remain an open question in this file.
+- Extends **D-011** semantics (`hanko tag` refuses computed prereleases): `hanko seal` defaults to refusing prereleases too, with `seal.refuse-prerelease: false` as the escape hatch (same shape as `--initial` is for `hanko tag`).
 - Keeps **D-001** out: the `--source` flag for detached HEAD stays a CLI flag, not config — it's a per-invocation concern, not a repo-level policy.
