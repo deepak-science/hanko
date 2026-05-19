@@ -42,13 +42,25 @@
         );
       treefmtEval = eachSystem (pkgs: inputs.treefmt-nix.lib.evalModule pkgs ./treefmt.nix);
       hankoOverlay = final: _prev: {
-        hanko = final.buildGoApplication {
+        hanko = final.buildGoApplication rec {
           pname = "hanko";
           version = "0.0.1";
           src = ./.;
           modules = ./gomod2nix.toml;
           nativeBuildInputs = [ final.installShellFiles ];
           nativeCheckInputs = [ final.git ];
+          # Self-stamp: feed the flake's own git metadata into hanko's `--version`.
+          # Option-2 dogfood — no semver (that would require a bootstrap hanko); commit + date only.
+          ldflags = [
+            "-s"
+            "-w"
+            "-X"
+            "main.version=${version}"
+            "-X"
+            "main.commit=${self.rev or self.dirtyRev or "unknown"}"
+            "-X"
+            "main.date=${self.lastModifiedDate or "unknown"}"
+          ];
           postInstall = ''
             installShellCompletion --cmd hanko \
               --bash <($out/bin/hanko completion bash) \

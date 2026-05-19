@@ -50,6 +50,13 @@ func Execute() {
 	}
 }
 
+// SetBuildInfo wires the build-time stamps onto the root command, exposing
+// them via `hanko --version`. Called from main(), where the linker can set
+// the vars via `-X main.version=…` ldflags.
+func SetBuildInfo(version, commit, date string) {
+	rootCmd.Version = fmt.Sprintf("%s (commit %s, built %s)", version, commit, date)
+}
+
 func init() {
 	rootCmd.AddGroup(
 		&cobra.Group{ID: "compute", Title: "Compute Commands:"},
