@@ -40,10 +40,14 @@ type Version struct {
 // against the supplied config. Pass config.Defaults() when no `.hanko.yaml`
 // is loaded — that path reproduces M1's behaviour exactly.
 //
+// `bumpOverride` (one of "patch"/"minor"/"major"/"none"/"") short-circuits
+// the bump-strategy for this single invocation; pass "" to let the strategy
+// decide. Exposed as `hanko version --bump <direction>`.
+//
 // D-001: a detached HEAD pointing at a tagged commit emits the tag's version
 // verbatim. This special case is invoked-policy, not branch-policy, so it
 // short-circuits before the config-driven branch evaluator.
-func Compute(info gitinfo.Info, cfg *config.Config) (Version, error) {
+func Compute(info gitinfo.Info, cfg *config.Config, bumpOverride string) (Version, error) {
 	if info.Detached && info.LatestTag != "" && info.CommitsSinceTag == 0 {
 		return versionFromTagAtHead(info, cfg.TagPrefix), nil
 	}
@@ -72,7 +76,7 @@ func Compute(info gitinfo.Info, cfg *config.Config) (Version, error) {
 		v.PreRelease = fmt.Sprintf("%s.%d", sanitizeBranch(branch), n)
 	} else {
 		policy, captures := matchBranch(cfg.Branches, branch)
-		direction := bumpDirection(cfg, policy, info.Commits)
+		direction := bumpDirection(cfg, policy, info.Commits, bumpOverride)
 		applyPolicy(&v, policy, captures, base, branch, n, direction)
 	}
 
@@ -192,12 +196,13 @@ func matchBranch(policies []config.BranchPolicy, branch string) (config.BranchPo
 	return config.BranchPolicy{Increment: "none", Label: "{branch}"}, []string{branch}
 }
 
-// bumpDirection returns the increment direction to apply for this commit,
-// honouring the configured strategy. For "fixed" (default) it's whatever the
-// branch policy declared. For "conventional-commits" it's the highest-
-// precedence direction signalled by the commits since the last tag, falling
-// back to the branch's declared `increment` when nothing matched.
-func bumpDirection(cfg *config.Config, p config.BranchPolicy, commits []gitinfo.Commit) string {
+// bumpDirection returns the increment direction to apply for this commit.
+// Precedence: explicit `override` flag > configured strategy > branch policy's
+// declared `increment`. Strategies decide direction; magnitude is always +1 (D-013).
+func bumpDirection(cfg *config.Config, p config.BranchPolicy, commits []gitinfo.Commit, override string) string {
+	if override != "" {
+		return override
+	}
 	if cfg.BumpStrategy != "conventional-commits" {
 		return p.Increment
 	}

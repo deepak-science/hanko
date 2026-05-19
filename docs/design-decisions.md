@@ -59,6 +59,14 @@ Add to this as you go; revisit collectively rather than litigating each one in i
   Mixed-shape repos get latest-wins, which is "weird but predictable" — mixed-shape repos should pick one shape.
   More exotic prefixes (`release-1.2.3`, `<pkg>-v1.2.3`) are out of scope until `.hanko.yaml` lands.
 
+- **D-014 — Conventional Commits parsing lives inside hanko.**
+  Hanko owns the bump *direction*, not just the magnitude (D-013).
+  The natural input to that decision is the commit subjects between the latest tag and HEAD, which hanko already has access to via its `gitinfo` package.
+  Delegating to `git-cliff` / `release-please` / `semantic-release` was considered and rejected: those tools generate changelogs and ship PRs (different jobs), each opinionated about its own templating, and forcing hanko users to run two tools to answer one identity query ("what does this commit call itself") is poor ergonomics.
+  The parser is small (~50 LOC, one regex), well-defined by the Conventional Commits spec, and inlines into the same `Compute` call path that handles the rest of the version computation.
+  Out of scope for v1: changelog generation, commit-message linting, scope-based bump overrides — all defer to specialised tools downstream of hanko.
+  Manual override: `hanko version --bump <direction>` short-circuits the strategy for the case "I broke the API but my commits don't say so."
+
 - **D-013 — Mainline bumps patch by 1, not by commit count.**
   GitVersion's `mode: ContinuousDeployment` heritage was `patch = base.patch + commits-since-tag`.
   Killed for several reasons:

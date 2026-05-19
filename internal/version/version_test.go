@@ -163,7 +163,7 @@ func TestCompute(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			v, err := Compute(tc.info, config.Defaults())
+			v, err := Compute(tc.info, config.Defaults(), "")
 			if err != nil {
 				t.Fatal(err)
 			}

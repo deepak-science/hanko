@@ -21,7 +21,7 @@ By default stamps three variables on package "main": version (full SemVer),
 commit (full SHA), date (committer date of HEAD). Pass --package to stamp a
 different import path.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		v, err := resolveVersion()
+		v, err := resolveVersion("")
 		if err != nil {
 			return err
 		}

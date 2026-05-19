@@ -8,14 +8,23 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var versionFormat string
+var (
+	versionFormat string
+	versionBump   string
+)
 
 var versionCmd = &cobra.Command{
 	Use:     "version",
 	Short:   "Compute the current version from git history",
 	GroupID: "compute",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		v, err := resolveVersion()
+		switch versionBump {
+		case "", "patch", "minor", "major", "none":
+			// valid
+		default:
+			return fmt.Errorf("unknown --bump %q (want: patch, minor, major, none)", versionBump)
+		}
+		v, err := resolveVersion(versionBump)
 		if err != nil {
 			return err
 		}
@@ -48,5 +57,6 @@ var versionCmd = &cobra.Command{
 
 func init() {
 	versionCmd.Flags().StringVarP(&versionFormat, "format", "f", "semver", "output format: semver, full, json, env, gha")
+	versionCmd.Flags().StringVar(&versionBump, "bump", "", "force a bump direction for this invocation: patch | minor | major | none (overrides bump-strategy)")
 	rootCmd.AddCommand(versionCmd)
 }

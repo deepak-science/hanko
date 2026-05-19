@@ -57,7 +57,7 @@ var tagCmd = &cobra.Command{
 			}
 			name = tagInitial
 		} else {
-			v, err := version.Compute(info, cfg)
+			v, err := version.Compute(info, cfg, "")
 			if err != nil {
 				return fmt.Errorf("compute version: %w", err)
 			}

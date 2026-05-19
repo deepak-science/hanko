@@ -37,7 +37,7 @@ For more, see [examples/local-usage.md](./examples/local-usage.md) and the migra
 
 | Command                              | Purpose                                                                |
 | ------------------------------------ | ---------------------------------------------------------------------- |
-| `hanko version`                      | Compute the current version. Formats: `semver` / `full` / `json` / `env` / `gha` |
+| `hanko version`                      | Compute the current version. Formats: `semver` / `full` / `json` / `env` / `gha`. `--bump <direction>` forces patch/minor/major for one invocation. |
 | `hanko tag [--push]`                 | Create (and optionally push) an annotated git tag for that version     |
 | `hanko stamp go-ldflags`             | Emit `-X main.version=… -X main.commit=… -X main.date=…` for `go build` |
 | `hanko stamp docker tags <image>`    | Fan version out into `<image>:<full>`, `:<major.minor>`, `:<major>`, `:latest`, `:<branch>-<sha>` |
@@ -58,6 +58,7 @@ tag-prefix: "^v?(.+)$"           # regex applied to existing tags to extract a s
 dirty-suffix: true               # dirty worktree appends `.dirty` to build metadata
 initial-version: "0.1.0"         # base used when no semver tag is reachable
 on-shallow: refuse               # exit non-zero on shallow clones — see D-004
+bump-strategy: fixed             # `fixed` (per-branch `increment`) | `conventional-commits` (parse commit subjects)
 
 tag-match:                       # globs that decide which tags are eligible for discovery (`git describe --match`)
   - "v[0-9]*.[0-9]*.[0-9]*"

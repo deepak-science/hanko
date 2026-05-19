@@ -112,6 +112,41 @@ commit "$repo" four
 got=$("$HANKO" --repo "$repo" version)
 assert_eq "feature branch is a pre-release on the tag base" "1.2.3-feature-foo.3" "$got"
 
+section "hanko version --bump (manual override)"
+repoBump=$(mkrepo)
+commit "$repoBump" one
+git -C "$repoBump" tag v1.0.0
+commit "$repoBump" "chore: no signal here"
+# Default fixed strategy + branch's `increment: patch` would yield 1.0.1.
+assert_eq "no --bump → patch from branch policy" "1.0.1" "$("$HANKO" --repo "$repoBump" version)"
+assert_eq "--bump minor → 1.1.0" "1.1.0" "$("$HANKO" --repo "$repoBump" version --bump minor)"
+assert_eq "--bump major → 2.0.0" "2.0.0" "$("$HANKO" --repo "$repoBump" version --bump major)"
+assert_eq "--bump none → 1.0.0" "1.0.0" "$("$HANKO" --repo "$repoBump" version --bump none)"
+# Bad value:
+set +e
+out=$("$HANKO" --repo "$repoBump" version --bump bananas 2>&1)
+code=$?
+set -e
+assert_exit "rejects bad --bump value" 1 "$code"
+assert_contains "error names valid values" "patch, minor, major, none" "$out"
+
+section "hanko version with bump-strategy: conventional-commits"
+repoCC=$(mkrepo)
+commit "$repoCC" one
+git -C "$repoCC" tag v1.0.0
+cat >"$repoCC/.hanko.yaml" <<'EOF'
+bump-strategy: conventional-commits
+EOF
+# chore: alone → no signal, falls back to branch's increment (patch).
+commit "$repoCC" "chore: tidy"
+assert_eq "chore alone → 1.0.1 (fallback)" "1.0.1" "$("$HANKO" --repo "$repoCC" version)"
+# feat: → minor bump.
+commit "$repoCC" "feat: shiny new thing"
+assert_eq "feat → 1.1.0 (minor)" "1.1.0" "$("$HANKO" --repo "$repoCC" version)"
+# feat!: → major bump.
+commit "$repoCC" "feat!: redo api"
+assert_eq "feat! → 2.0.0 (major)" "2.0.0" "$("$HANKO" --repo "$repoCC" version)"
+
 section "hanko tag — happy path"
 repo=$(mkrepo)
 commit "$repo" one

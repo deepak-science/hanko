@@ -212,25 +212,22 @@ Today every bump is "+1 in the direction the branch's `increment` field names" (
 That's the *fixed* strategy.
 Other strategies decide the *direction* of the bump from commit content rather than from branch config alone.
 
-- [ ] Schema: reintroduce a top-level `bump-strategy:` (or per-branch override) with values `fixed` (current default, today's behaviour) and `conventional-commits` (parse commit messages between latest tag and HEAD).
-- [ ] **Conventional Commits parser.**
-  Inspect `git log <latest-tag>..HEAD` commit subjects:
-  - `feat!:` / `fix!:` / `BREAKING CHANGE:` in body → `major`
+- [x] Schema: top-level `bump-strategy:` with values `fixed` (default) and `conventional-commits` (parse commit messages between latest tag and HEAD).
+- [x] **Conventional Commits parser** (`internal/bump`).
+  Implements the Conventional Commits spec:
+  - `feat!:` / `<type>(scope)!:` / `BREAKING CHANGE:` in body → `major`
   - `feat:` → `minor`
   - `fix:` → `patch`
   - other (`chore:`, `docs:`, `refactor:`, `test:`, `style:`, `perf:`, etc.) → contributes nothing on its own
-  - no matching commits → fall back to the branch's declared `increment`, defaulting to `patch`
-  Hanko owns this; we don't shell out to a third-party tool. The parser is small and well-defined.
-- [ ] **`hanko version` consumes the strategy.**
-  Output reflects the strategy-determined direction, not a hardcoded one.
-- [ ] **`hanko tag` and `hanko seal` respect it.**
-  The tag name is whatever `version` computed; no separate logic.
-- [ ] **Manual override flag.**
-  `hanko version --bump {patch,minor,major,none}` short-circuits the strategy for one invocation.
-  Useful for "I know I broke the API but the commit messages don't say so."
-- [ ] **Per-branch override.**
-  `branches[].bump-strategy: fixed` lets a hotfix branch ignore commit-message hints while mainline reads them.
-- [ ] Tests: golden cases per strategy; commit-message edge cases (multi-line, scoped types, malformed); fall-through behaviour.
+  - no matching commits → fall back to the branch's declared `increment`
+  Hanko owns this; the parser is ~50 LOC + one regex. See D-014.
+- [x] **`hanko version` consumes the strategy.**
+- [x] **`hanko tag` respects it** (it calls `version.Compute` internally).
+- [x] **Manual override flag.** `hanko version --bump {patch,minor,major,none}` short-circuits the strategy for one invocation.
+- [ ] **`hanko seal` will respect it** — wired automatically when seal lands in M5c.
+- [ ] **Per-branch override** (deferred — `branches[].bump-strategy: fixed` to let a hotfix branch ignore commit-message hints).
+  Cheap to add later when there's demand.
+- [x] Tests: parser edge cases (scoped types, footer `BREAKING CHANGE`, uppercase, empty), strategy precedence, manual override, smoke coverage on a real repo.
 
 Why hanko owns this rather than relegating to `git-cliff` or `release-please`:
 those tools generate changelogs and ship PRs, which is a different job.

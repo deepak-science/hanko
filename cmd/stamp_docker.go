@@ -51,7 +51,7 @@ to moving tags would tag movement to an unstable build.
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		image := strings.TrimRight(args[0], ":/")
-		v, err := resolveVersion()
+		v, err := resolveVersion("")
 		if err != nil {
 			return err
 		}
@@ -140,7 +140,7 @@ var stampDockerLabelsCmd = &cobra.Command{
 Always sets ` + "`version`, `revision`, `created`" + `. Pass ` + "`--source`" + ` and
 ` + "`--title`" + ` to set the matching labels; absent values are omitted.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		v, err := resolveVersion()
+		v, err := resolveVersion("")
 		if err != nil {
 			return err
 		}

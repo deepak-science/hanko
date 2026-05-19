@@ -35,7 +35,7 @@ contain at least one ` + "`version = \"<value>\";`" + ` attr; the first match wi
 			path = filepath.Join(repoPath, path)
 		}
 
-		v, err := resolveVersion()
+		v, err := resolveVersion("")
 		if err != nil {
 			return err
 		}

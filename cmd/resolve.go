@@ -15,8 +15,9 @@ var ErrShallow = errors.New("shallow clone (re-clone without --depth, or use `wi
 
 // resolveVersion is the shared prelude used by every command that needs a computed version.
 // It loads `.hanko.yaml` (defaults if absent), reads the repo state, refuses
-// if the repo is shallow, then runs version.Compute.
-func resolveVersion() (version.Version, error) {
+// if the repo is shallow, then runs version.Compute. `bumpOverride` is a
+// one-shot direction forced by `hanko version --bump`; pass "" elsewhere.
+func resolveVersion(bumpOverride string) (version.Version, error) {
 	cfg, err := config.Load(repoPath)
 	if err != nil {
 		return version.Version{}, fmt.Errorf("load config: %w", err)
@@ -28,7 +29,7 @@ func resolveVersion() (version.Version, error) {
 	if info.Shallow {
 		return version.Version{}, ErrShallow
 	}
-	v, err := version.Compute(info, cfg)
+	v, err := version.Compute(info, cfg, bumpOverride)
 	if err != nil {
 		return version.Version{}, fmt.Errorf("compute version: %w", err)
 	}

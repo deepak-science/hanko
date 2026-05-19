@@ -33,7 +33,7 @@ prefers to refuse rather than guess.
 		chart := args[0]
 		path := filepath.Join(chart, "Chart.yaml")
 
-		v, err := resolveVersion()
+		v, err := resolveVersion("")
 		if err != nil {
 			return err
 		}

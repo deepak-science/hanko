@@ -37,10 +37,17 @@ Don't read `$HOME` configs — hanko is a project-scoped tool.
 # (Resolves design-decisions.md D-002.)
 tag-prefix: "^v?(.+)$"
 
-# (No `mode:` key today — see D-013: the GitVersion-inherited mode field
-# named a behaviour we no longer implement. A future `bump-strategy:` key,
-# scoped in ROADMAP M5e, will reintroduce the choice between `fixed` (today)
-# and `conventional-commits` (parse commit messages to pick direction).)
+# How the bump direction is chosen on a tagged repo. (D-013: magnitude is
+# always +1; only the direction is configurable.)
+#   fixed                — use each branch's declared `increment` as-is.
+#   conventional-commits — parse `<latest-tag>..HEAD` subjects; pick the
+#                          strongest signal (feat!:/BREAKING CHANGE → major,
+#                          feat: → minor, fix: → patch). If no commit
+#                          contributes a signal, fall back to the branch's
+#                          `increment`.
+# A `hanko version --bump <direction>` flag short-circuits the strategy for
+# one invocation — useful for "I broke the API but my commits don't say so".
+bump-strategy: fixed
 
 # Whether a dirty worktree appends `.dirty` to build metadata.
 # Off → dirty is silently ignored in version output (still surfaced as a warning on stderr).
