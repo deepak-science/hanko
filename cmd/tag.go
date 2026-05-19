@@ -3,6 +3,7 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"regexp"
 
 	"github.com/dmallubhotla/hanko/internal/gittag"
 	"github.com/dmallubhotla/hanko/internal/version"
@@ -16,7 +17,12 @@ var (
 	tagForce   bool
 	tagMessage string
 	tagSign    bool
+	tagInitial string
 )
+
+// initialRE accepts the same shapes the version engine recognises:
+// optional `v` prefix, semver core, optional pre-release / build metadata.
+var initialRE = regexp.MustCompile(`^v?\d+\.\d+\.\d+([-+][0-9A-Za-z.\-+]+)?$`)
 
 var tagCmd = &cobra.Command{
 	Use:     "tag",
@@ -27,32 +33,55 @@ var tagCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		v, err := version.Compute(info)
-		if err != nil {
-			return fmt.Errorf("compute version: %w", err)
-		}
 
-		name := "v" + v.SemVer
+		var name string
+		if tagInitial != "" {
+			// D-011 (revised): `--initial` is the one narrow exception to the
+			// "never tag a pre-release" rule. Only valid in the bootstrap
+			// state (no prior semver-shaped tag), takes the value verbatim so
+			// the caller decides the v-prefix policy for their repo.
+			atHead, err := gittag.AtHead(repoPath, tagInitial)
+			if err != nil {
+				return fmt.Errorf("check tag at head: %w", err)
+			}
+			if atHead {
+				fmt.Println(tagInitial)
+				return nil
+			}
+			if info.LatestTag != "" {
+				return fmt.Errorf("--initial only valid when no semver-shaped tag exists (found %q)", info.LatestTag)
+			}
+			if !initialRE.MatchString(tagInitial) {
+				return fmt.Errorf("--initial %q is not a semver-shaped tag (want v?MAJOR.MINOR.PATCH[-pre][+meta])", tagInitial)
+			}
+			name = tagInitial
+		} else {
+			v, err := version.Compute(info)
+			if err != nil {
+				return fmt.Errorf("compute version: %w", err)
+			}
+			name = "v" + v.SemVer
 
-		// Pre-flight checks.
-		// Order matters: cheap state checks before any git mutation, and the idempotency check before the conflict check (because "already at HEAD" looks like a conflict to naive tag-existence queries).
-		atHead, err := gittag.AtHead(repoPath, name)
-		if err != nil {
-			return fmt.Errorf("check tag at head: %w", err)
-		}
-		if atHead {
-			fmt.Println(name)
-			return nil
+			// Pre-flight checks.
+			// Order matters: cheap state checks before any git mutation, and the idempotency check before the conflict check (because "already at HEAD" looks like a conflict to naive tag-existence queries).
+			atHead, err := gittag.AtHead(repoPath, name)
+			if err != nil {
+				return fmt.Errorf("check tag at head: %w", err)
+			}
+			if atHead {
+				fmt.Println(name)
+				return nil
+			}
+
+			// D-011: hanko tag never creates pre-release tags via computation.
+			// The bootstrap case (first release in a fresh repo) is handled by `--initial <version>`.
+			if v.IsPreRelease {
+				return fmt.Errorf("computed version %q is a pre-release; `hanko tag` only tags releases (merge to mainline first, or use `--initial <version>` for the first release)", v.SemVer)
+			}
 		}
 
 		if info.Dirty && !tagForce {
 			return fmt.Errorf("worktree is dirty; refusing to tag (pass --force to override)")
-		}
-		// D-011: hanko tag never creates pre-release tags.
-		// Pre-release versions live on feature / hotfix branches; the canonical "release" tag happens after merge to mainline.
-		// If you genuinely need a pre-release marker, create it by hand with `git tag`.
-		if v.IsPreRelease {
-			return fmt.Errorf("computed version %q is a pre-release; `hanko tag` only tags releases (merge to mainline first)", v.SemVer)
 		}
 
 		exists, err := gittag.Exists(repoPath, name)
@@ -60,6 +89,11 @@ var tagCmd = &cobra.Command{
 			return fmt.Errorf("check tag exists: %w", err)
 		}
 		if exists {
+			if tagInitial != "" {
+				return fmt.Errorf("tag %q already exists", name)
+			}
+			// Computed path: AtHead was checked and returned false, so the
+			// existing tag is at a different commit.
 			return fmt.Errorf("tag %q exists but does not point at HEAD", name)
 		}
 
@@ -100,5 +134,6 @@ func init() {
 	tagCmd.Flags().BoolVar(&tagForce, "force", false, "tag even if the worktree is dirty")
 	tagCmd.Flags().StringVarP(&tagMessage, "message", "m", "", "annotated-tag message (default: \"Release v<semver>\")")
 	tagCmd.Flags().BoolVar(&tagSign, "sign", false, "GPG-sign the tag (uses git's gpg config)")
+	tagCmd.Flags().StringVar(&tagInitial, "initial", "", "create the first release tag verbatim; only valid when no semver-shaped tag exists yet")
 	rootCmd.AddCommand(tagCmd)
 }

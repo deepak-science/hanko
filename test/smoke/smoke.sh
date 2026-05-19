@@ -164,6 +164,48 @@ assert_contains "announces would-create" "would create annotated tag" "$out"
 tags_after=$(git -C "$repo3" tag -l | sort | tr '\n' ',')
 assert_eq "no new tag created by --dry-run" "v2.0.0," "$tags_after"
 
+section "hanko tag --initial — bootstraps first release in a fresh repo"
+# D-011 (revised): `--initial` is the only escape hatch from the pre-release
+# refusal, and only when no semver-shaped tag exists yet.
+repoInit=$(mkrepo)
+commit "$repoInit" one
+got=$("$HANKO" --repo "$repoInit" tag --initial v0.1.0)
+assert_eq "creates v0.1.0 verbatim" "v0.1.0" "$got"
+got=$(git -C "$repoInit" cat-file -t v0.1.0)
+assert_eq "initial tag is annotated" "tag" "$got"
+
+# Idempotent re-run: same --initial on a repo that already has the tag at HEAD.
+got=$("$HANKO" --repo "$repoInit" tag --initial v0.1.0)
+assert_eq "rerun echoes existing tag" "v0.1.0" "$got"
+
+section "hanko tag --initial — verbatim value preserves bare-tag convention"
+repoBare=$(mkrepo)
+commit "$repoBare" one
+got=$("$HANKO" --repo "$repoBare" tag --initial 0.1.0)
+assert_eq "creates bare 0.1.0 (no auto-v-prefix)" "0.1.0" "$got"
+
+section "hanko tag --initial — refuses if any semver tag already exists"
+repoTagged=$(mkrepo)
+commit "$repoTagged" one
+git -C "$repoTagged" tag v0.1.0
+commit "$repoTagged" two
+set +e
+out=$("$HANKO" --repo "$repoTagged" tag --initial v1.0.0 2>&1)
+code=$?
+set -e
+assert_exit "exit code" 1 "$code"
+assert_contains "error explains why" "--initial only valid when no semver-shaped tag exists" "$out"
+
+section "hanko tag --initial — refuses non-semver values"
+repoBad=$(mkrepo)
+commit "$repoBad" one
+set +e
+out=$("$HANKO" --repo "$repoBad" tag --initial banana 2>&1)
+code=$?
+set -e
+assert_exit "exit code" 1 "$code"
+assert_contains "error mentions shape" "not a semver-shaped tag" "$out"
+
 section "hanko tag — refuses to overwrite a conflicting tag"
 # Setup: on main, hanko will compute v1.0.1 (1 commit past v1.0.0). On an
 # unreachable side branch, squat v1.0.1 at a different commit. git describe

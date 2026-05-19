@@ -44,10 +44,13 @@ Add to this as you go; revisit collectively rather than litigating each one in i
   Anything else (`develop`, `trunk`, …) is outside hanko's convention and gets feature-branch treatment.
   Repos that disagree should rename, or wait for `.hanko.yaml` to grow a `mainline-branches` key.
 
-- **D-011 — `hanko tag` refuses pre-release versions unconditionally. No `--allow-prerelease-tag` flag.**
+- **D-011 — `hanko tag` refuses computed pre-release versions. One narrow escape hatch: `--initial <version>` for the first release.**
   Pre-release versions live on feature / hotfix branches; the canonical release tag happens after merge to mainline.
-  Removing the flag eliminated the non-idempotent re-tag case (the second run computed a different tag based on the first run's tag) without needing per-policy idempotency logic.
-  Anyone with a hard need to mark a hotfix iteration can `git tag` by hand.
+  Refusing computed pre-releases eliminates the non-idempotent re-tag case (the second run would compute a different tag based on the first run's tag).
+  **The exception**: a fresh repo with no tag has nowhere to bootstrap from — every commit computes a pre-release and `hanko tag` would loop on its own rule.
+  `--initial <version>` resolves this: it takes the value **verbatim** (caller picks `v0.1.0` vs `0.1.0`, sidestepping D-002 for the bootstrap case), refuses if any semver-shaped tag already exists, and otherwise creates the tag and optionally pushes.
+  After the bootstrap tag exists, normal computation takes over — `--initial` is unusable a second time.
+  Anyone with a hard need to mark a hotfix iteration still uses `git tag` by hand.
 
 - **D-012 — `git describe` filters to semver-shaped tags via `--match` patterns.**
   Two patterns passed: `v[0-9]*.[0-9]*.[0-9]*` and `[0-9]*.[0-9]*.[0-9]*`.
