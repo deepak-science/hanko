@@ -265,6 +265,13 @@ Asking the user to run two tools to answer one question is poor ergonomics.
 - Cross-platform CI: matrix of `linux/x86_64`, `linux/arm64`, `darwin/arm64`, `windows/x86_64` for at least the smoke tests.
 - Golangci-lint clean.
   Coverage > 70% on `internal/version`.
+- **Smoke-test reorg.**
+  `test/smoke/smoke.sh` is one ~700-line shell file with `section "…"` headers.
+  Approaching the point where it's painful to navigate.
+  Migrate to `go test ./test/smoke/...` — each section becomes a `Test*` function, fixtures shared via `t.Run` subtests, `internal/testrepo` already has the git scaffolding.
+  Wins: parallel runs, structured output, single test idiom (no more "go test for units, bash for smoke"), faster (no per-section binary build).
+  Cost: ~200 LOC of `exec.Cmd` harness + mechanical migration of existing assertions.
+  Defer until smoke crosses ~150 assertions or starts flaking; current count is 80.
 
 ---
 
