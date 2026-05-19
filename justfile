@@ -42,3 +42,18 @@ update:
 chores:
     nix develop --command go mod tidy
     nix develop --command gomod2nix
+
+# release: bump flake.nix to the computed semver, commit, tag, push.
+# Refuses if the worktree has uncommitted changes going in.
+release:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -n "$(git status --porcelain)" ]; then
+        echo "worktree dirty; commit or stash before releasing" >&2
+        exit 1
+    fi
+    nix develop --command go run . stamp nix
+    ver=$(nix develop --command go run . version)
+    git add flake.nix
+    git commit -m "Release ${ver}"
+    nix develop --command go run . tag --push
