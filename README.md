@@ -7,13 +7,54 @@ It is intended as a more specific, single-static-binary replacement for [GitVers
 
 ## Philosophy
 
-Hanko has three main commands:
-- `hanko version`: return a descriptor of current repository state. read-only and idempotent.
-- `hanko stamp …`: apply the current repository state to an artifact
-- `hanko tag`: creates a git tag with the current version
+Hanko has **three primitives** and **one ritual** that composes them:
+
+- **`hanko version`** — *identity query*.
+  Read-only, idempotent.
+  Same `(commit, branch, dirty, tag-history)` → same answer.
+  Re-run it freely; every CI job that needs a label computes from its own checkout.
+- **`hanko stamp …`** — *apply identity to an artifact*.
+  Two output shapes (see below).
+- **`hanko tag`** — *promote identity to a permanent git ref*.
+  The only command that creates a release artifact in git; everything else is preparation.
+- **`hanko seal`** — *the release rite*.
+  Sugar over the primitives: stamp the declared targets, run `pre-commit:` hooks, single commit, tag, push.
+  One invocation, one release commit, atomic push.
 
 A useful litmus test: if running `hanko version` could change behavior elsewhere, the design is wrong.
 It's a label-reader, not a state-machine step.
+Same for the stdout-emitting stamp commands — they print, they don't mutate.
+
+### Stamp shapes
+
+Stamp commands come in two flavors, sorted by what they touch:
+
+- **Build-time stamps (stdout / labels).**
+  `stamp go-ldflags` prints `-X main.version=…` for splicing into `go build`.
+  `stamp docker tags` prints the image-ref fan-out.
+  `stamp docker labels` emits `--label org.opencontainers.image.*` args.
+  These run on every build, don't touch the repo, and the dirty worktree they produce is intentional and discarded with the build directory.
+- **Release-time stamps (in-place file mutation).**
+  `stamp helm <chart-dir>` sets `version` / `appVersion` in `Chart.yaml`.
+  `stamp nix [flake-file]` sets the `version = "..."` attr in `flake.nix`.
+  `stamp` (no args, config-driven) reads `stamp-targets:` from `.hanko.yaml` and applies all declared targets in one pass — works across `pyproject.toml`, `package.json`, `Cargo.toml`, `Chart.yaml`, `flake.nix`, plain `VERSION` files.
+  These mutate source files that record the project's version; they're release-time operations, not build-time.
+
+### Release rite (`hanko seal`)
+
+`hanko seal` is the bundled release flow.
+At the cost of a `.hanko.yaml` block describing your stamp targets and hooks, it replaces a hand-rolled `stamp → git add → git commit → hanko tag --push` recipe:
+
+1. **Pre-flight.** Refuse a dirty worktree (so the release commit only contains what seal produced) or a detached HEAD. Refuse pre-release versions unless `seal.refuse-prerelease: false`.
+2. **Stamp targets.** Apply every `stamp-targets:` entry to the computed version. Failures abort the seal.
+3. **Pre-commit hooks.** Run `seal.pre-commit:` commands in order — changelog generation, lockfile regeneration, anything that produces files that should be in the release commit. Templated args (`{semver}`, `{full}`, `{major}`, etc.) expand to fields of the computed version.
+4. **Commit.** A single release commit with everything the previous steps produced, using `seal.commit-message:` (default `Release {semver}`).
+5. **Tag.** Annotated tag matching `hanko tag` semantics.
+6. **Push.** `git push --atomic` for commit + tag, to `seal.push-remote:` (default `origin`).
+
+`hanko seal --dry-run` walks the same pipeline without mutating, printing each step.
+
+Anyone who prefers a hand-rolled recipe can still call the primitives directly — seal exists for ergonomics, not as a gatekeeper.
 
 ## Status
 
@@ -39,11 +80,13 @@ For more, see [examples/local-usage.md](./examples/local-usage.md) and the migra
 | ------------------------------------ | ---------------------------------------------------------------------- |
 | `hanko version`                      | Compute the current version. Formats: `semver` / `full` / `json` / `env` / `gha`. `--bump <direction>` forces patch/minor/major for one invocation. |
 | `hanko tag [--push]`                 | Create (and optionally push) an annotated git tag for that version     |
+| `hanko seal [--dry-run]`             | Run the release rite: stamp targets → run hooks → commit → tag → push  |
+| `hanko stamp` (no args)              | Apply every declared `stamp-targets:` to the computed version          |
 | `hanko stamp go-ldflags`             | Emit `-X main.version=… -X main.commit=… -X main.date=…` for `go build` |
 | `hanko stamp docker tags <image>`    | Fan version out into `<image>:<full>`, `:<major.minor>`, `:<major>`, `:latest`, `:<branch>-<sha>` |
 | `hanko stamp docker labels`          | Emit `org.opencontainers.image.*` labels as `--label` args or a label file |
 | `hanko stamp helm <chart-dir>`       | Set `version` and `appVersion` in `Chart.yaml` in place                |
-| `hanko stamp nix [flake-file]`       | Set the first `version = "..."` attr in `flake.nix` (release-time bump)|
+| `hanko stamp nix [flake-file]`       | Set the `version = "..."` attr in `flake.nix` (release-time bump)      |
 | `hanko config show`                  | Print the resolved (merged-with-defaults) `.hanko.yaml`                |
 
 ## Defaults

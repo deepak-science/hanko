@@ -121,6 +121,77 @@ commit_yaml() {
   git -C "$dir" commit -q -m "add hanko config"
 }
 
+section "hanko stamp (no args) — declarative stamp-targets"
+repoTgt=$(mkrepo)
+# Build the files we'll stamp BEFORE the tag so the version-on-mainline math
+# is straightforward (commits past v1.0.0 → 1.0.1).
+mkdir -p "$repoTgt"
+cat >"$repoTgt/pyproject.toml" <<'EOF'
+[project]
+name = "demo"
+version = "0.0.1"
+EOF
+cat >"$repoTgt/package.json" <<'EOF'
+{
+  "name": "demo",
+  "version": "0.0.1"
+}
+EOF
+cat >"$repoTgt/Chart.yaml" <<'EOF'
+apiVersion: v2
+name: demo
+version: 0.0.1
+appVersion: "0.0.1"
+EOF
+cat >"$repoTgt/.hanko.yaml" <<'EOF'
+seal:
+  push-remote: ""
+stamp-targets:
+  - path: pyproject.toml
+    format: toml
+    key: project.version
+  - path: package.json
+    format: json
+    key: version
+  - path: Chart.yaml
+    format: yaml
+    keys: [version, appVersion]
+EOF
+git -C "$repoTgt" add .
+git -C "$repoTgt" commit -q -m initial
+git -C "$repoTgt" tag v1.0.0
+commit "$repoTgt" two
+
+# Dry-run prints per-target descriptions, doesn't write.
+out=$("$HANKO" --repo "$repoTgt" stamp --dry-run)
+assert_contains "dry-run lists pyproject" "pyproject.toml (toml)" "$out"
+assert_contains "dry-run lists package.json" "package.json (json)" "$out"
+assert_contains "dry-run lists Chart.yaml" "Chart.yaml (yaml)" "$out"
+assert_contains "dry-run shows the new value in pyproject" "project.version: 0.0.1 → 1.0.1" "$out"
+got_after_dryrun=$(grep '^version' "$repoTgt/pyproject.toml")
+assert_eq "dry-run did not write pyproject" 'version = "0.0.1"' "$got_after_dryrun"
+
+# Real run mutates all three files.
+"$HANKO" --repo "$repoTgt" stamp >/dev/null
+got_py=$(grep '^version' "$repoTgt/pyproject.toml")
+assert_eq "pyproject bumped" 'version = "1.0.1"' "$got_py"
+got_js=$(grep '"version"' "$repoTgt/package.json")
+assert_contains "package.json bumped" '"version": "1.0.1"' "$got_js"
+got_helm_v=$(grep '^version:' "$repoTgt/Chart.yaml")
+assert_eq "Chart.yaml version bumped" "version: 1.0.1" "$got_helm_v"
+got_helm_a=$(grep '^appVersion:' "$repoTgt/Chart.yaml")
+assert_eq "Chart.yaml appVersion bumped (quoted preserved)" 'appVersion: "1.0.1"' "$got_helm_a"
+
+section "hanko stamp (no args) — refuses when no targets declared"
+repoNo=$(mkrepo)
+commit "$repoNo" one
+set +e
+out=$("$HANKO" --repo "$repoNo" stamp 2>&1)
+code=$?
+set -e
+assert_exit "exit code" 1 "$code"
+assert_contains "error mentions stamp-targets" "stamp-targets" "$out"
+
 section "hanko seal — dry-run"
 repoSeal=$(mkrepo)
 commit "$repoSeal" one
@@ -145,6 +216,35 @@ out=$("$HANKO" --repo "$repoSeal" seal 2>&1)
 assert_contains "prints created tag" "v0.1.1" "$out"
 got_tag=$(git -C "$repoSeal" tag -l v0.1.1)
 assert_eq "tag v0.1.1 was created" "v0.1.1" "$got_tag"
+
+section "hanko seal — runs stamp-targets before pre-commit hooks"
+repoSealTgt=$(mkrepo)
+mkdir -p "$repoSealTgt"
+cat >"$repoSealTgt/pyproject.toml" <<'EOF'
+[project]
+name = "demo"
+version = "0.0.1"
+EOF
+cat >"$repoSealTgt/.hanko.yaml" <<'EOF'
+seal:
+  push-remote: ""
+stamp-targets:
+  - path: pyproject.toml
+    format: toml
+    key: project.version
+EOF
+git -C "$repoSealTgt" add .
+git -C "$repoSealTgt" commit -q -m initial
+git -C "$repoSealTgt" tag v1.0.0
+commit "$repoSealTgt" two
+"$HANKO" --repo "$repoSealTgt" seal >/dev/null
+got=$(grep '^version' "$repoSealTgt/pyproject.toml")
+assert_eq "seal bumped pyproject" 'version = "1.0.1"' "$got"
+got_tag=$(git -C "$repoSealTgt" tag -l v1.0.1)
+assert_eq "seal created tag" "v1.0.1" "$got_tag"
+# Verify the release commit includes the pyproject bump (single commit).
+got_files=$(git -C "$repoSealTgt" show --stat HEAD --pretty=format: | grep -v '^$' | head -3 | tr -d ' ')
+assert_contains "release commit touched pyproject" "pyproject.toml" "$got_files"
 
 section "hanko seal — refuses dirty"
 repoDirty=$(mkrepo)

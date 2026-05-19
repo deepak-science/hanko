@@ -124,7 +124,7 @@ stamp-targets:
 
   - path: Chart.yaml
     format: yaml
-    key: [version, appVersion]
+    keys: [version, appVersion]   # multiple keys → use `keys:` (list form)
 
   - path: package.json
     format: json
@@ -135,8 +135,11 @@ stamp-targets:
     key: version
 
   - path: VERSION
-    format: plain    # whole file is the value
+    format: plain    # whole file is the value; no key needed
 ```
+
+`key:` is the singular form (one key) and `keys:` is the list form (when several attrs in the same file get the same value, like Chart.yaml's `version` + `appVersion`).
+A target must set exactly one of them (except `format: plain`, which ignores both).
 
 ### Engine choice — line-based first
 
@@ -156,14 +159,21 @@ that's it.
 
 ### Field paths
 
-`key` is a dotted path into the file's structure.
+`key` (or `keys`) is a dotted path into the file's structure.
 For top-level scalars (`version` in `package.json`) the path is a single
 segment.
 For nested keys (`project.version` in `pyproject.toml`) the path walks the
-section headers.
-A list value (`[version, appVersion]`) means "stamp all of these to the same
-new value" — useful for Chart.yaml where both keys conventionally hold the
-same semver.
+section headers — currently only TOML's bracketed sections are honoured;
+YAML/JSON nesting is on the deferred list.
+A `keys:` list means "stamp all of these to the same new value" — useful
+for Chart.yaml where both `version` and `appVersion` conventionally hold
+the same semver.
+
+**Coincidental-match assumption** (D-015): when several `version = "X"`
+lines in the same file share the same value, the engine assumes they all
+refer to the same release. False positives (e.g. a vendored override
+pinned at the same string) get rewritten too. Refuse-on-divergence catches
+the obvious bad shape; document this when adopting.
 
 ### What gets stamped
 

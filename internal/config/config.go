@@ -53,12 +53,47 @@ type Config struct {
 	// Empty/unset → use Defaults' list.
 	Branches []BranchPolicy `yaml:"branches,omitempty"`
 
+	// Declarative stamp targets — files to mutate in lockstep at release
+	// time. `hanko stamp` (no args) applies them all; `hanko seal` runs the
+	// same pass before its pre-commit hooks.
+	StampTargets []StampTarget `yaml:"stamp-targets,omitempty"`
+
 	// Seal orchestration — see `hanko seal` (M5c).
 	Seal SealConfig `yaml:"seal,omitempty"`
 
 	// Source records the .hanko.yaml path that was loaded (empty if defaults).
 	// Not serialised back out.
 	Source string `yaml:"-"`
+}
+
+// StampTarget describes one file to update at release time.
+//
+// `Key` is a dotted path: top-level keys are bare names ("version"),
+// nested keys (TOML) use dot separators ("project.version"). For files that
+// hold multiple instances of the same release version (Chart.yaml's `version`
+// and `appVersion`), use the `Keys` list instead.
+//
+// Engine choice per format is line-based (see docs/hanko-yaml.md and D-015).
+type StampTarget struct {
+	// Path is relative to the repo root.
+	Path string `yaml:"path"`
+	// Format selects the engine: "toml", "yaml", "json", "nix", "plain".
+	Format string `yaml:"format"`
+	// Key is the single dotted path to stamp. Either Key or Keys must be set.
+	Key string `yaml:"key,omitempty"`
+	// Keys is the list form for files where multiple paths get the same value.
+	Keys []string `yaml:"keys,omitempty"`
+}
+
+// EffectiveKeys returns the keys to stamp, normalising Key/Keys into a list.
+func (s StampTarget) EffectiveKeys() []string {
+	if len(s.Keys) > 0 {
+		return s.Keys
+	}
+	if s.Key != "" {
+		return []string{s.Key}
+	}
+	return nil
 }
 
 // SealConfig configures `hanko seal`: the release-time rite that bundles
@@ -199,6 +234,9 @@ func mergeOnDefaults(user *Config) *Config {
 	}
 	if len(user.Branches) > 0 {
 		out.Branches = user.Branches
+	}
+	if len(user.StampTargets) > 0 {
+		out.StampTargets = user.StampTargets
 	}
 	if len(user.Seal.PreCommit) > 0 {
 		out.Seal.PreCommit = user.Seal.PreCommit

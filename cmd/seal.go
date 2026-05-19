@@ -100,6 +100,10 @@ var sealCmd = &cobra.Command{
 			fmt.Printf("  branch:         %s\n", info.Branch)
 			fmt.Printf("  tag name:       %s\n", tagName)
 			fmt.Printf("  commit message: %s\n", commitMessage)
+			fmt.Printf("  stamp-targets (%d):\n", len(cfg.StampTargets))
+			for _, t := range cfg.StampTargets {
+				fmt.Printf("    - %s (%s)\n", t.Path, t.Format)
+			}
 			fmt.Printf("  pre-commit hooks (%d):\n", len(cfg.Seal.PreCommit))
 			for _, h := range cfg.Seal.PreCommit {
 				fmt.Printf("    - %s\n", v.Expand(h))
@@ -110,6 +114,14 @@ var sealCmd = &cobra.Command{
 				fmt.Printf("  push:           (disabled)\n")
 			}
 			return nil
+		}
+
+		// Apply declarative stamp-targets (if any) before user hooks.
+		// Stamper failures abort the seal with the worktree untouched.
+		if len(cfg.StampTargets) > 0 {
+			if err := applyStampTargets(cfg.StampTargets, v, false); err != nil {
+				return fmt.Errorf("stamp-targets: %w", err)
+			}
 		}
 
 		// Run hooks. Stdout/stderr forwarded so the user sees what their

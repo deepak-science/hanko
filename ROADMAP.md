@@ -190,13 +190,14 @@ adjacent scope.
 
 ### M5b — `stamp-targets:` + generic stamp engine
 
-- [ ] Per-format line-based stampers behind a unified engine: `toml`, `yaml`, `json`, `nix`, `plain`.
-  Reuse the existing helm/nix line-pattern approach; canonical "key on its own line, scalar value" is the supported shape.
-- [ ] Nested keys via dotted path (`project.version` for `pyproject.toml`'s `[project]` section, etc.).
-- [ ] List-valued `key:` for multi-key targets (Chart.yaml's `version`+`appVersion`).
-- [ ] `hanko stamp` (no args) reads `stamp-targets:` and applies all targets.
-  Keep `stamp helm` / `stamp nix` as positional-arg shorthand for one-off use.
-- [ ] `hanko stamp --dry-run` reads the config and emits per-target before/after diffs.
+- [x] Per-format line-based stampers behind a unified engine (`internal/stamper`): `toml`, `yaml`, `json`, `nix`, `plain`.
+  Reuses the existing helm/nix line-pattern approach; canonical "key on its own line, scalar value" is the supported shape.
+- [x] Nested keys via dotted path (`project.version` for `pyproject.toml`'s `[project]` section, etc.) — TOML engine is section-aware.
+- [x] List form for multi-key targets — schema uses a separate `keys:` field (singular `key:` is shorthand for the one-key case).
+- [x] `hanko stamp` (no args) reads `stamp-targets:` and applies all targets.
+  `stamp helm` / `stamp nix` remain as positional-arg shorthand for one-off use.
+- [x] `hanko stamp --dry-run` reads the config and emits per-target before/after diffs.
+- [x] `hanko seal` auto-runs the declarative stamp pass before its `pre-commit:` hooks.
 
 ### M5c — `hanko seal`
 
