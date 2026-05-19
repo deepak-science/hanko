@@ -34,6 +34,98 @@ type Version struct {
 	CommitDate string `json:"commitDate,omitempty"`
 
 	IsPreRelease bool `json:"isPreRelease"`
+
+	// Decision records the rationale behind this computation. Excluded from
+	// JSON (the public output is the version itself); surfaced via
+	// `--verbose` for human inspection.
+	Decision Decision `json:"-"`
+}
+
+// Decision is the human-readable rationale behind a Compute call: which
+// branch policy matched, which strategy ran, what each commit contributed,
+// what direction was finally applied. Populated unconditionally so callers
+// can render it on demand.
+type Decision struct {
+	// Special-case path taken (empty if normal branch evaluation ran).
+	// Values: "D-001 detached-at-tag", "no-tag fallback".
+	ShortCircuit string
+
+	// Branch policy that matched.
+	BranchName  string
+	BranchRegex string
+
+	// Strategy that drove the bump direction.
+	// "fixed" | "conventional-commits" | "manual override".
+	Strategy       string
+	StrategySource string // "global" | "per-branch override" | "--bump flag"
+
+	// For conventional-commits: per-commit classification + the strongest
+	// signal across the range.
+	Commits         []CommitClassification
+	StrongestSignal string // "patch" | "minor" | "major" | "none"
+	FellBack        bool   // strategy returned None, used branch's Increment instead
+
+	// Final direction applied (could differ from StrongestSignal if a manual
+	// override fired or the fallback engaged).
+	Direction string
+
+	// Versions: base parsed from latest tag (or initial-version), result.
+	BaseTag string
+	Base    string
+	Result  string
+}
+
+// CommitClassification is one row in Decision.Commits — a commit subject
+// and the bump direction it contributes under Conventional Commits.
+type CommitClassification struct {
+	Subject   string
+	Direction string // "patch" | "minor" | "major" | "none"
+}
+
+// Format returns a human-readable, multi-line summary of the decision,
+// suitable for printing to stderr under a `--verbose` flag.
+func (d Decision) Format() string {
+	var b strings.Builder
+	b.WriteString("bump decision:\n")
+	if d.ShortCircuit != "" {
+		fmt.Fprintf(&b, "  short-circuit:   %s\n", d.ShortCircuit)
+		if d.BaseTag != "" {
+			fmt.Fprintf(&b, "  base tag:        %s\n", d.BaseTag)
+		}
+		if d.Result != "" {
+			fmt.Fprintf(&b, "  result:          %s\n", d.Result)
+		}
+		return b.String()
+	}
+	if d.BranchName != "" {
+		fmt.Fprintf(&b, "  branch policy:   %s (regex: %s)\n", d.BranchName, d.BranchRegex)
+	}
+	fmt.Fprintf(&b, "  strategy:        %s (from %s)\n", d.Strategy, d.StrategySource)
+	if len(d.Commits) > 0 {
+		fmt.Fprintf(&b, "  commits since %s (%d):\n", d.BaseTag, len(d.Commits))
+		for _, c := range d.Commits {
+			marker := ""
+			if c.Direction == d.StrongestSignal && c.Direction != "none" {
+				marker = "  ← strongest"
+			}
+			fmt.Fprintf(&b, "    %-50s → %s%s\n", truncate(c.Subject, 50), c.Direction, marker)
+		}
+		fmt.Fprintf(&b, "  strongest signal: %s\n", d.StrongestSignal)
+		if d.FellBack {
+			fmt.Fprintf(&b, "  (no signal → fell back to branch increment)\n")
+		}
+	}
+	fmt.Fprintf(&b, "  direction:       %s\n", d.Direction)
+	fmt.Fprintf(&b, "  base:            %s\n", d.Base)
+	fmt.Fprintf(&b, "  result:          %s\n", d.Result)
+	return b.String()
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n-1] + "…"
 }
 
 // Compute derives a version from the given gitinfo snapshot, evaluated
@@ -49,7 +141,13 @@ type Version struct {
 // short-circuits before the config-driven branch evaluator.
 func Compute(info gitinfo.Info, cfg *config.Config, bumpOverride string) (Version, error) {
 	if info.Detached && info.LatestTag != "" && info.CommitsSinceTag == 0 {
-		return versionFromTagAtHead(info, cfg.TagPrefix), nil
+		v := versionFromTagAtHead(info, cfg.TagPrefix)
+		v.Decision = Decision{
+			ShortCircuit: "D-001 detached-at-tag",
+			BaseTag:      info.LatestTag,
+			Result:       v.SemVer,
+		}
+		return v, nil
 	}
 
 	base, _ := parseSemverTag(info.LatestTag, cfg.TagPrefix)
@@ -64,6 +162,10 @@ func Compute(info gitinfo.Info, cfg *config.Config, bumpOverride string) (Versio
 		ShortSha:   info.ShortSha,
 		CommitDate: info.CommitDate,
 	}
+	d := Decision{
+		BaseTag: info.LatestTag,
+		Base:    fmt.Sprintf("%d.%d.%d", base.major, base.minor, base.patch),
+	}
 
 	n := info.CommitsSinceTag
 
@@ -74,9 +176,22 @@ func Compute(info gitinfo.Info, cfg *config.Config, bumpOverride string) (Versio
 		initial, _ := parseSemverTag(cfg.InitialVersion, cfg.TagPrefix)
 		v.Major, v.Minor, v.Patch = initial.major, initial.minor, initial.patch
 		v.PreRelease = fmt.Sprintf("%s.%d", sanitizeBranch(branch), n)
+		d.ShortCircuit = "no-tag fallback (uses initial-version)"
+		d.Base = cfg.InitialVersion
 	} else {
 		policy, captures := matchBranch(cfg.Branches, branch)
-		direction := bumpDirection(cfg, policy, info.Commits, bumpOverride)
+		d.BranchName = policy.Name
+		d.BranchRegex = policy.Regex
+
+		direction, strategy, source, classifications, strongest, fellBack :=
+			decideBump(cfg, policy, info.Commits, bumpOverride)
+		d.Strategy = strategy
+		d.StrategySource = source
+		d.Commits = classifications
+		d.StrongestSignal = strongest
+		d.FellBack = fellBack
+		d.Direction = direction
+
 		applyPolicy(&v, policy, captures, base, branch, n, direction)
 	}
 
@@ -92,6 +207,8 @@ func Compute(info gitinfo.Info, cfg *config.Config, bumpOverride string) (Versio
 		v.FullSemVer += "+" + v.BuildMetadata
 	}
 
+	d.Result = v.SemVer
+	v.Decision = d
 	return v, nil
 }
 
@@ -217,20 +334,56 @@ func matchBranch(policies []config.BranchPolicy, branch string) (config.BranchPo
 	return config.BranchPolicy{Increment: "none", Label: "{branch}"}, []string{branch}
 }
 
-// bumpDirection returns the increment direction to apply for this commit.
-// Precedence: explicit `override` flag > configured strategy > branch policy's
-// declared `increment`. Strategies decide direction; magnitude is always +1 (D-013).
-func bumpDirection(cfg *config.Config, p config.BranchPolicy, commits []gitinfo.Commit, override string) string {
+// decideBump returns the bump direction *and* the rationale fields needed
+// to populate a Decision. Precedence: explicit `override` flag > per-branch
+// strategy > global strategy > branch policy's declared `increment`.
+// Strategies decide direction; magnitude is always +1 (D-013).
+func decideBump(cfg *config.Config, p config.BranchPolicy, commits []gitinfo.Commit, override string) (
+	direction, strategy, source string,
+	classifications []CommitClassification,
+	strongest string,
+	fellBack bool,
+) {
 	if override != "" {
-		return override
+		return override, "manual override", "--bump flag", nil, "", false
 	}
-	if cfg.BumpStrategy != "conventional-commits" {
-		return p.Increment
+
+	strategy = cfg.BumpStrategy
+	source = "global"
+	if p.BumpStrategy != "" {
+		strategy = p.BumpStrategy
+		source = "per-branch override"
 	}
-	if d := bump.Parse(commits); d != bump.None {
-		return d.String()
+
+	if strategy != "conventional-commits" {
+		// Fixed (or any non-conventional value): just use the branch's increment.
+		return p.Increment, strategy, source, nil, "", false
 	}
-	return p.Increment
+
+	// Conventional-commits: classify each commit + take the strongest signal.
+	classifications = classifyCommits(commits)
+	d := bump.Parse(commits)
+	strongest = d.String()
+	if d != bump.None {
+		return d.String(), strategy, source, classifications, strongest, false
+	}
+	// No signal in the range — fall back to the branch's declared increment.
+	return p.Increment, strategy, source, classifications, strongest, true
+}
+
+// classifyCommits returns the per-commit Direction labels for inclusion in
+// a Decision. Mirrors bump.Parse's logic without short-circuiting on the
+// first Major, since the explanation wants every commit visible.
+func classifyCommits(commits []gitinfo.Commit) []CommitClassification {
+	out := make([]CommitClassification, 0, len(commits))
+	for _, c := range commits {
+		d := bump.Parse([]gitinfo.Commit{c})
+		out = append(out, CommitClassification{
+			Subject:   c.Subject,
+			Direction: d.String(),
+		})
+	}
+	return out
 }
 
 // applyPolicy fills v.{Major,Minor,Patch,PreRelease} based on the matched

@@ -135,6 +135,10 @@ type BranchPolicy struct {
 	// Zero = not bound (don't override the base tag's major/minor).
 	MajorFrom int `yaml:"major-from,omitempty"`
 	MinorFrom int `yaml:"minor-from,omitempty"`
+	// Per-branch override of the global bump-strategy. Empty → inherit from
+	// top-level `bump-strategy:`. Useful for "mainline reads conventional
+	// commits; hotfix always bumps patch regardless of commit messages."
+	BumpStrategy string `yaml:"bump-strategy,omitempty"`
 }
 
 // Defaults returns the hard-coded baseline config. M1's behaviour, expressed
@@ -148,7 +152,12 @@ func Defaults() *Config {
 		DirtySuffix:    &t,
 		InitialVersion: "0.1.0",
 		OnShallow:      "refuse",
-		BumpStrategy:   "fixed",
+		// D-016: default to reading Conventional Commits hints. Repos that
+		// don't follow the convention get the parser's "no signal" verdict
+		// and fall back to the per-branch `increment`, so behaviour is
+		// unchanged for them — the new default only surfaces for repos that
+		// already write `feat:` / `fix:` / `feat!:` style commits.
+		BumpStrategy: "conventional-commits",
 		Seal: SealConfig{
 			CommitMessage:    "Release {semver}",
 			PushRemote:       &defaultRemote,

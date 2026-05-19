@@ -227,9 +227,9 @@ Other strategies decide the *direction* of the bump from commit content rather t
 - [x] **`hanko version` consumes the strategy.**
 - [x] **`hanko tag` respects it** (it calls `version.Compute` internally).
 - [x] **Manual override flag.** `hanko version --bump {patch,minor,major,none}` short-circuits the strategy for one invocation.
-- [ ] **`hanko seal` will respect it** — wired automatically when seal lands in M5c.
-- [ ] **Per-branch override** (deferred — `branches[].bump-strategy: fixed` to let a hotfix branch ignore commit-message hints).
-  Cheap to add later when there's demand.
+- [x] **`hanko seal` respects it** (seal calls `version.Compute` internally).
+- [x] **Per-branch override** — `branches[].bump-strategy: fixed` lets a hotfix rule stay patch-only while mainline reads conventional commits.
+- [x] **Default flipped to `conventional-commits`** (D-016). Repos that don't follow the spec keep the same behaviour via the no-signal fallback to each branch's `increment`.
 - [x] Tests: parser edge cases (scoped types, footer `BREAKING CHANGE`, uppercase, empty), strategy precedence, manual override, smoke coverage on a real repo.
 
 Why hanko owns this rather than relegating to `git-cliff` or `release-please`:

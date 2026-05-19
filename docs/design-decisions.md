@@ -88,6 +88,12 @@ Add to this as you go; revisit collectively rather than litigating each one in i
   No config knob — refusing is the only honest answer.
   If a user genuinely needs to compute a version mid-operation, the right answer is `git <op> --abort` (or `--continue`), not a `--force` flag.
 
+- **D-016 — Conventional Commits is the default `bump-strategy`.**
+  Repos that follow the spec get free bump-direction hints; repos that don't see no behaviour change.
+  The parser returns `bump.None` on non-conforming commit subjects, and that falls through to the branch policy's declared `increment` — so a repo whose `<latest-tag>..HEAD` is all "fix typo", "wip", or other free-form messages computes exactly what it computed before (mainline → `patch+=1`, etc.).
+  The new default flips the value-add for users who already write `feat:` / `fix:` / `feat!:` commits — they don't need to set anything in `.hanko.yaml`.
+  Opt out per repo with `bump-strategy: fixed`, or per branch with `branches[].bump-strategy: fixed` (useful for hotfix branches that should always bump patch regardless of commit-message hints).
+
 - **D-015 — `stamp nix` rewrites every `version = "X";` line sharing the current value.**
   Surfaced by kestrel (first real consumer): its `flake.nix` exposes both `kest` and `kestci` derivations, each a `buildGoApplication` with its own `version = "..."`.
   First-match-wins silently left the second derivation on the previous release's version.

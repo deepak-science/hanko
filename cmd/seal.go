@@ -88,9 +88,23 @@ var sealCmd = &cobra.Command{
 		}
 		tagName := prefix + v.SemVer
 
-		// Refuse if the tag already exists at a different commit. The "at
-		// HEAD" case can't legitimately fire here (we're about to make a new
-		// commit), but a stale tag from a prior aborted seal would.
+		// No-release-needed: the bump strategy decided the next tag should
+		// have the same name as the latest existing one. Could be:
+		//   - re-running seal on a tagged commit (tag is at HEAD already)
+		//   - strict-conventional + an all-chore range (no signal → no bump)
+		//   - a branch with `increment: none` and no other signal
+		// All three are "your worktree is up to date; nothing to release."
+		if info.LatestTag != "" && tagName == info.LatestTag {
+			fmt.Printf("no release needed: computed tag %s matches the latest existing tag\n", tagName)
+			if d := v.Decision; d.Strategy == "conventional-commits" && len(d.Commits) > 0 && d.StrongestSignal == "none" {
+				fmt.Printf("(%d commit(s) since %s, none with feat:/fix:/feat!: signals)\n", len(d.Commits), d.BaseTag)
+			}
+			return nil
+		}
+
+		// Refuse if the tag already exists at any commit. The "match the
+		// latest tag" case is handled above; this catches stale tags from a
+		// prior aborted seal at a different commit.
 		if exists, err := gittag.Exists(repoPath, tagName); err != nil {
 			return fmt.Errorf("check tag exists: %w", err)
 		} else if exists {

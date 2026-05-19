@@ -371,6 +371,53 @@ assert_eq "main updated in bare origin" "$expectedSha" "$gotMain"
 gotFlake=$(git -C "$bareRepo" show v1.0.1:flake.nix | grep '^      version')
 assert_contains "flake.nix in release commit was bumped" 'version = "1.0.1"' "$gotFlake"
 
+section "hanko seal — exits 0 with 'no release needed' when bump direction is none"
+# Strict-conventional setup: branch has `increment: none`, so any range
+# without feat:/fix:/feat!: signals computes the same tag we already have.
+repoNoRelease=$(mkrepo)
+commit "$repoNoRelease" one
+commit_yaml "$repoNoRelease" 'seal:
+  push-remote: ""
+branches:
+  - name: mainline
+    regex: ^(main|master)$
+    is-mainline: true
+    increment: none
+    label: ""
+  - name: feature
+    regex: .*
+    increment: none
+    label: "{branch}"
+'
+git -C "$repoNoRelease" tag v1.0.0
+commit "$repoNoRelease" "chore: tidy"
+commit "$repoNoRelease" "docs: typo"
+set +e
+out=$("$HANKO" --repo "$repoNoRelease" seal 2>&1)
+code=$?
+set -e
+assert_exit "exit 0 on no-release-needed" 0 "$code"
+assert_contains "message names the no-release path" "no release needed" "$out"
+assert_contains "message identifies the unchanged tag" "v1.0.0" "$out"
+assert_contains "message hints at why (no signal)" "none with feat" "$out"
+# Verify no new tag was created.
+tags_after=$(git -C "$repoNoRelease" tag -l | tr '\n' ',')
+assert_eq "no new tag was created" "v1.0.0," "$tags_after"
+
+section "hanko version --verbose prints decision rationale to stderr"
+repoVerbose=$(mkrepo)
+commit "$repoVerbose" one
+git -C "$repoVerbose" tag v1.0.0
+commit "$repoVerbose" "feat: new shiny"
+# stdout is the version; stderr is the decision rationale.
+stdout=$("$HANKO" --repo "$repoVerbose" version --verbose 2>/dev/null)
+stderr=$("$HANKO" --repo "$repoVerbose" version --verbose 2>&1 >/dev/null)
+assert_eq "stdout is just the version" "1.1.0" "$stdout"
+assert_contains "stderr names the strategy" "strategy:        conventional-commits" "$stderr"
+assert_contains "stderr shows the commit subject" "feat: new shiny" "$stderr"
+assert_contains "stderr marks the strongest signal" "← strongest" "$stderr"
+assert_contains "stderr names the direction" "direction:       minor" "$stderr"
+
 section "hanko seal — refuses dirty"
 repoDirty=$(mkrepo)
 commit "$repoDirty" one

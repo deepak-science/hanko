@@ -180,6 +180,63 @@ func TestCompute(t *testing.T) {
 	}
 }
 
+func TestCompute_perBranchBumpStrategyOverride(t *testing.T) {
+	// Global strategy reads conventional commits; one branch policy overrides
+	// to `fixed`, which should ignore feat: signals on that branch.
+	cfg := config.Defaults()
+	for i, b := range cfg.Branches {
+		if b.Name == "hotfix" {
+			cfg.Branches[i].BumpStrategy = "fixed"
+		}
+	}
+
+	featCommit := gitinfo.Commit{Subject: "feat: shiny new thing"}
+
+	// Main with a feat: → minor bump (global strategy applies).
+	mainInfo := gitinfo.Info{
+		Branch: "main", LatestTag: "v1.2.3",
+		CommitsSinceTag: 1, ShortSha: "abc1234",
+		Commits: []gitinfo.Commit{featCommit},
+	}
+	got, err := Compute(mainInfo, cfg, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.SemVer != "1.3.0" {
+		t.Errorf("main: SemVer = %q, want 1.3.0 (feat → minor)", got.SemVer)
+	}
+
+	// Hotfix with the same feat: → patch bump (per-branch fixed override).
+	hotfixInfo := gitinfo.Info{
+		Branch: "hotfix/urgent", LatestTag: "v1.2.3",
+		CommitsSinceTag: 1, ShortSha: "abc1234",
+		Commits: []gitinfo.Commit{featCommit},
+	}
+	got, err = Compute(hotfixInfo, cfg, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.SemVer != "1.2.4-hotfix.1" {
+		t.Errorf("hotfix: SemVer = %q, want 1.2.4-hotfix.1 (override ignored feat)", got.SemVer)
+	}
+}
+
+func TestCompute_defaultStrategyIsConventionalCommits(t *testing.T) {
+	// D-016: with bare Defaults() and a feat: commit, mainline emits a minor bump.
+	info := gitinfo.Info{
+		Branch: "main", LatestTag: "v1.0.0",
+		CommitsSinceTag: 1, ShortSha: "abc1234",
+		Commits: []gitinfo.Commit{{Subject: "feat: new"}},
+	}
+	got, err := Compute(info, config.Defaults(), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.SemVer != "1.1.0" {
+		t.Errorf("SemVer = %q, want 1.1.0 (conventional-commits default)", got.SemVer)
+	}
+}
+
 func TestSanitizeBranch(t *testing.T) {
 	cases := map[string]string{
 		"feature/foo":     "feature-foo",

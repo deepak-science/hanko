@@ -39,15 +39,21 @@ tag-prefix: "^v?(.+)$"
 
 # How the bump direction is chosen on a tagged repo. (D-013: magnitude is
 # always +1; only the direction is configurable.)
-#   fixed                — use each branch's declared `increment` as-is.
 #   conventional-commits — parse `<latest-tag>..HEAD` subjects; pick the
 #                          strongest signal (feat!:/BREAKING CHANGE → major,
 #                          feat: → minor, fix: → patch). If no commit
 #                          contributes a signal, fall back to the branch's
-#                          `increment`.
+#                          `increment`. Default (D-016) — a repo that
+#                          doesn't follow the convention gets unchanged
+#                          behaviour via the fall-back.
+#   fixed                — skip the parser entirely; use each branch's
+#                          declared `increment`. Set this if commit messages
+#                          shouldn't influence the bump.
 # A `hanko version --bump <direction>` flag short-circuits the strategy for
 # one invocation — useful for "I broke the API but my commits don't say so".
-bump-strategy: fixed
+# Branches can override: `branches[].bump-strategy: fixed` keeps a hotfix
+# rule patch-only even when mainline reads conventional commits.
+bump-strategy: conventional-commits
 
 # Whether a dirty worktree appends `.dirty` to build metadata.
 # Off → dirty is silently ignored in version output (still surfaced as a warning on stderr).

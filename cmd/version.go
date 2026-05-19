@@ -29,6 +29,10 @@ var versionCmd = &cobra.Command{
 			return err
 		}
 
+		if verbose {
+			fmt.Fprint(os.Stderr, v.Decision.Format())
+		}
+
 		switch versionFormat {
 		case "semver":
 			fmt.Println(v.SemVer)

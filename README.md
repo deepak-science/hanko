@@ -101,7 +101,7 @@ tag-prefix: "^v?(.+)$"           # regex applied to existing tags to extract a s
 dirty-suffix: true               # dirty worktree appends `.dirty` to build metadata
 initial-version: "0.1.0"         # base used when no semver tag is reachable
 on-shallow: refuse               # exit non-zero on shallow clones — see D-004
-bump-strategy: fixed             # `fixed` (per-branch `increment`) | `conventional-commits` (parse commit subjects)
+bump-strategy: conventional-commits  # parse commit subjects for bump direction; falls back to per-branch `increment` when no signal. `fixed` skips the parser entirely.
 
 tag-match:                       # globs that decide which tags are eligible for discovery (`git describe --match`)
   - "v[0-9]*.[0-9]*.[0-9]*"
