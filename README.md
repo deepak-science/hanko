@@ -9,9 +9,8 @@ It is intended as a more specific, single-static-binary replacement for [GitVers
 
 Hanko has three main commands:
 - `hanko version`: return a descriptor of current repository state. read-only and idempotent.
-- `hanko version` — *what is this?* Read-only. Idempotent. Same `(commit, branch, dirty, tag-history)` → same answer. Re-run it freely; every CI job that needs the label just re-computes from its own checkout.
-- `hanko stamp …`  — *apply this commit's identity to artifact X.* Writes the computed version into Chart.yaml, ldflags, Docker labels, etc.
-- `hanko tag`      — *promote this commit's identity to a permanent git ref.* The only release-shaped act, and even then it's persisting an identity hanko already computed — it doesn't decide the version, git state does.
+- `hanko stamp …`: apply the current repository state to an artifact
+- `hanko tag`: creates a git tag with the current version
 
 A useful litmus test: if running `hanko version` could change behavior elsewhere, the design is wrong.
 It's a label-reader, not a state-machine step.

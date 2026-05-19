@@ -52,7 +52,7 @@ var tagCmd = &cobra.Command{
 		// Pre-release versions live on feature / hotfix branches; the canonical "release" tag happens after merge to mainline.
 		// If you genuinely need a pre-release marker, create it by hand with `git tag`.
 		if v.IsPreRelease {
-			return fmt.Errorf("computed version %q is a pre-release; `hanko tag` only tags releases (merge to main/master first)", v.SemVer)
+			return fmt.Errorf("computed version %q is a pre-release; `hanko tag` only tags releases (merge to mainline first)", v.SemVer)
 		}
 
 		exists, err := gittag.Exists(repoPath, name)
