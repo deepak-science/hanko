@@ -32,9 +32,9 @@ mkrepo() {
   mkdir -p "$dir"
   git -C "$dir" init -q --initial-branch=main
   git -C "$dir" config user.email fixture@example.invalid
-  git -C "$dir" config user.name  fixture
+  git -C "$dir" config user.name fixture
   git -C "$dir" config commit.gpgsign false
-  git -C "$dir" config tag.gpgsign    false
+  git -C "$dir" config tag.gpgsign false
 }
 
 # ── go-app ────────────────────────────────────────────────────────────────
@@ -46,13 +46,13 @@ init_go_app() {
   rm -rf "$dir"
   mkrepo "$dir"
 
-  cat > "$dir/go.mod" <<'EOF'
+  cat >"$dir/go.mod" <<'EOF'
 module example.invalid/demo
 
 go 1.24
 EOF
 
-  cat > "$dir/main.go" <<'EOF'
+  cat >"$dir/main.go" <<'EOF'
 package main
 
 import "fmt"
@@ -71,7 +71,7 @@ EOF
   git -C "$dir" add -A
   git -C "$dir" commit -q -m "initial commit"
   git -C "$dir" tag v0.1.0
-  echo "// placeholder" >> "$dir/main.go"
+  echo "// placeholder" >>"$dir/main.go"
   git -C "$dir" add -A
   git -C "$dir" commit -q -m "another change"
 }
@@ -83,7 +83,7 @@ init_helm_chart() {
   rm -rf "$dir"
   mkrepo "$dir"
 
-  cat > "$dir/Chart.yaml" <<'EOF'
+  cat >"$dir/Chart.yaml" <<'EOF'
 apiVersion: v2
 name: demo
 description: A tiny demo chart for hanko fixtures
@@ -93,7 +93,7 @@ appVersion: "0.0.0"
 EOF
 
   mkdir -p "$dir/templates"
-  cat > "$dir/templates/configmap.yaml" <<'EOF'
+  cat >"$dir/templates/configmap.yaml" <<'EOF'
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -105,7 +105,7 @@ EOF
   git -C "$dir" add -A
   git -C "$dir" commit -q -m "initial commit"
   git -C "$dir" tag v1.4.0
-  echo "# trailing comment" >> "$dir/Chart.yaml"
+  echo "# trailing comment" >>"$dir/Chart.yaml"
   git -C "$dir" add -A
   git -C "$dir" commit -q -m "trivial edit past tag"
   git -C "$dir" commit --allow-empty -q -m "second commit past tag"
@@ -118,12 +118,12 @@ init_docker_image() {
   rm -rf "$dir"
   mkrepo "$dir"
 
-  cat > "$dir/Containerfile" <<'EOF'
+  cat >"$dir/Containerfile" <<'EOF'
 FROM docker.io/library/alpine:3.20
 CMD ["echo", "hello from hanko fixture"]
 EOF
 
-  cat > "$dir/README.md" <<'EOF'
+  cat >"$dir/README.md" <<'EOF'
 # docker-image fixture
 
 Tag fan-out demo:
@@ -143,15 +143,30 @@ EOF
 }
 
 # ── dispatch ──────────────────────────────────────────────────────────────
-declare -a WANT=("${@:-go-app helm-chart docker-image}")
-WANT=(${WANT[@]})
+if [[ $# -eq 0 ]]; then
+  WANT=(go-app helm-chart docker-image)
+else
+  WANT=("$@")
+fi
 
 mkdir -p "$FIX"
 for f in "${WANT[@]}"; do
   case "$f" in
-    go-app)       init_go_app       ; echo "built $FIX/go-app" ;;
-    helm-chart)   init_helm_chart   ; echo "built $FIX/helm-chart" ;;
-    docker-image) init_docker_image ; echo "built $FIX/docker-image" ;;
-    *) echo "unknown fixture: $f" >&2; exit 2 ;;
+  go-app)
+    init_go_app
+    echo "built $FIX/go-app"
+    ;;
+  helm-chart)
+    init_helm_chart
+    echo "built $FIX/helm-chart"
+    ;;
+  docker-image)
+    init_docker_image
+    echo "built $FIX/docker-image"
+    ;;
+  *)
+    echo "unknown fixture: $f" >&2
+    exit 2
+    ;;
   esac
 done

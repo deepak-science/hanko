@@ -5,6 +5,17 @@
 `hanko` is a small Go CLI that computes a version from your git history and stamps it onto build artifacts: container images, helm charts, Go binaries, OS packages, archives.
 It is intended as a more specific, single-static-binary replacement for [GitVersion](https://github.com/GitTools/GitVersion).
 
+## Philosophy
+
+Hanko has three main commands:
+- `hanko version`: return a descriptor of current repository state. read-only and idempotent.
+- `hanko version` — *what is this?* Read-only. Idempotent. Same `(commit, branch, dirty, tag-history)` → same answer. Re-run it freely; every CI job that needs the label just re-computes from its own checkout.
+- `hanko stamp …`  — *apply this commit's identity to artifact X.* Writes the computed version into Chart.yaml, ldflags, Docker labels, etc.
+- `hanko tag`      — *promote this commit's identity to a permanent git ref.* The only release-shaped act, and even then it's persisting an identity hanko already computed — it doesn't decide the version, git state does.
+
+A useful litmus test: if running `hanko version` could change behavior elsewhere, the design is wrong.
+It's a label-reader, not a state-machine step.
+
 ## Status
 
 M0–M3 shipped: real version computation, idempotent tagging, and stamping for `go-ldflags` / `docker tags` / `docker labels` / `helm` work end-to-end against unit, smoke, and flow tests.
@@ -49,31 +60,3 @@ Common tasks live in the `justfile`:
 - `just fixtures` — (re)build dev fixtures under `./fixtures/` (gitignored)
 - `just chores` — `go mod tidy` + regenerate `gomod2nix.toml`
 
-## Layout
-
-```
-.
-├── main.go
-├── cmd/                # cobra commands (version, tag, stamp ...)
-├── internal/
-│   ├── gitinfo/        # extract relevant git state (read-only)
-│   ├── gittag/         # tag creation + push (write-side)
-│   ├── version/        # version-calculation engine
-│   ├── logging/        # slog file logger
-│   └── testrepo/       # shared test helper (temp git repos)
-├── docs/
-│   ├── design-decisions.md   # running log of open / decided design questions
-│   └── hanko-yaml.md         # sketched `.hanko.yaml` config (not implemented)
-├── examples/
-│   ├── local-usage.md
-│   ├── migrations/     # before / after for cicd's shared workflows
-│   ├── cicd-composite-action/    # drop-in replacement for resolve-version
-│   └── cicd-reusable-workflow/   # drop-in for gitversion.yml
-├── test/
-│   ├── smoke/          # CLI shape tests
-│   ├── flows/          # mock-repo scenario tests
-│   └── fixtures/       # script that builds /fixtures (gitignored)
-├── flake.nix
-├── justfile
-└── ROADMAP.md
-```

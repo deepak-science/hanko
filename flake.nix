@@ -48,6 +48,7 @@
           src = ./.;
           modules = ./gomod2nix.toml;
           nativeBuildInputs = [ final.installShellFiles ];
+          nativeCheckInputs = [ final.git ];
           postInstall = ''
             installShellCompletion --cmd hanko \
               --bash <($out/bin/hanko completion bash) \

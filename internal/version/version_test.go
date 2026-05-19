@@ -8,11 +8,11 @@ import (
 
 func TestCompute(t *testing.T) {
 	cases := []struct {
-		name         string
-		info         gitinfo.Info
-		wantSemVer   string
-		wantFull     string
-		wantPre      bool
+		name       string
+		info       gitinfo.Info
+		wantSemVer string
+		wantFull   string
+		wantPre    bool
 	}{
 		{
 			name: "mainline no commits since tag",

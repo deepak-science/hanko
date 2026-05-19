@@ -6,9 +6,10 @@ default:
 build:
     nix build
 
-# run go tests
+# run go tests via nix develop
 test:
-    nix develop --command go test ./...
+    nix flake check
+    # go test ./...
 
 # end-to-end CLI smoke tests (verifies command shape on minimal repos)
 smoke:

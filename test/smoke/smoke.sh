@@ -19,12 +19,15 @@
 set -euo pipefail
 
 HANKO="${1:-${HANKO:-}}"
-if [[ -z "$HANKO" ]]; then
+if [[ -z $HANKO ]]; then
   echo "building hanko via go build..."
   HANKO="$(mktemp -d)/hanko"
   go build -o "$HANKO" .
 fi
-[[ -x "$HANKO" ]] || { echo "hanko binary not found or not executable: $HANKO" >&2; exit 2; }
+[[ -x $HANKO ]] || {
+  echo "hanko binary not found or not executable: $HANKO" >&2
+  exit 2
+}
 
 # ── tiny assertion framework ───────────────────────────────────────────────
 
@@ -32,22 +35,29 @@ pass=0
 fail=0
 fail_names=()
 
-ok()   { printf "  ok   %s\n" "$1"; pass=$((pass+1)); }
-fail() { printf "  FAIL %s\n        want: %q\n        got:  %q\n" "$1" "$2" "$3"; fail=$((fail+1)); fail_names+=("$1"); }
+ok() {
+  printf "  ok   %s\n" "$1"
+  pass=$((pass + 1))
+}
+fail() {
+  printf "  FAIL %s\n        want: %q\n        got:  %q\n" "$1" "$2" "$3"
+  fail=$((fail + 1))
+  fail_names+=("$1")
+}
 
 assert_eq() {
   # assert_eq <name> <expected> <actual>
-  if [[ "$2" == "$3" ]]; then ok "$1"; else fail "$1" "$2" "$3"; fi
+  if [[ $2 == "$3" ]]; then ok "$1"; else fail "$1" "$2" "$3"; fi
 }
 
 assert_contains() {
   # assert_contains <name> <needle> <haystack>
-  if [[ "$3" == *"$2"* ]]; then ok "$1"; else fail "$1" "*$2*" "$3"; fi
+  if [[ $3 == *"$2"* ]]; then ok "$1"; else fail "$1" "*$2*" "$3"; fi
 }
 
 assert_exit() {
   # assert_exit <name> <expected_code> <actual_code>
-  if [[ "$2" -eq "$3" ]]; then ok "$1"; else fail "$1" "exit $2" "exit $3"; fi
+  if [[ $2 -eq $3 ]]; then ok "$1"; else fail "$1" "exit $2" "exit $3"; fi
 }
 
 # ── fresh repo helper ──────────────────────────────────────────────────────
@@ -57,20 +67,25 @@ mkrepo() {
   dir="$(mktemp -d)"
   git -C "$dir" init -q --initial-branch=main
   git -C "$dir" config user.email t@e.invalid
-  git -C "$dir" config user.name  t
+  git -C "$dir" config user.name t
   git -C "$dir" config commit.gpgsign false
-  git -C "$dir" config tag.gpgsign    false
+  git -C "$dir" config tag.gpgsign false
   printf "%s" "$dir"
 }
 
-commit() { echo "$2" >> "$1/f"; git -C "$1" add f; git -C "$1" commit -q -m "$2"; }
+commit() {
+  echo "$2" >>"$1/f"
+  git -C "$1" add f
+  git -C "$1" commit -q -m "$2"
+}
 
 # ── tests ──────────────────────────────────────────────────────────────────
 
 section() { printf "\n== %s ==\n" "$1"; }
 
 section "hanko version"
-repo=$(mkrepo); commit "$repo" one
+repo=$(mkrepo)
+commit "$repo" one
 got=$("$HANKO" --repo "$repo" version)
 assert_eq "no tag → 0.1.0-main.1" "0.1.0-main.1" "$got"
 
@@ -78,7 +93,8 @@ git -C "$repo" tag v1.2.3
 got=$("$HANKO" --repo "$repo" version)
 assert_eq "at tag → 1.2.3" "1.2.3" "$got"
 
-commit "$repo" two; commit "$repo" three
+commit "$repo" two
+commit "$repo" three
 got=$("$HANKO" --repo "$repo" version)
 assert_eq "2 commits past tag on main → 1.2.5" "1.2.5" "$got"
 
@@ -96,7 +112,8 @@ got=$("$HANKO" --repo "$repo" version)
 assert_eq "feature branch is a pre-release on the tag base" "1.2.3-feature-foo.3" "$got"
 
 section "hanko tag — happy path"
-repo=$(mkrepo); commit "$repo" one
+repo=$(mkrepo)
+commit "$repo" one
 git -C "$repo" tag v1.0.0
 commit "$repo" two
 got=$("$HANKO" --repo "$repo" tag)
@@ -111,12 +128,14 @@ assert_eq "second run echoes existing tag" "v1.0.1" "$got"
 section "hanko tag — refuses dirty"
 # Fresh repo: HEAD is past the latest tag, so the idempotency short-circuit
 # does NOT fire; dirty check should reject.
-repo2=$(mkrepo); commit "$repo2" one
+repo2=$(mkrepo)
+commit "$repo2" one
 git -C "$repo2" tag v1.0.0
 commit "$repo2" two
-echo dirt > "$repo2/c"
+echo dirt >"$repo2/c"
 set +e
-out=$("$HANKO" --repo "$repo2" tag 2>&1); code=$?
+out=$("$HANKO" --repo "$repo2" tag 2>&1)
+code=$?
 set -e
 assert_exit "exit code" 1 "$code"
 assert_contains "error mentions dirty" "dirty" "$out"
@@ -126,7 +145,8 @@ section "hanko tag — refuses prerelease unconditionally (D-011)"
 git -C "$repo" checkout -q -b feature/bar
 commit "$repo" three
 set +e
-out=$("$HANKO" --repo "$repo" tag 2>&1); code=$?
+out=$("$HANKO" --repo "$repo" tag 2>&1)
+code=$?
 set -e
 assert_exit "exit code" 1 "$code"
 assert_contains "error mentions pre-release" "pre-release" "$out"
@@ -134,7 +154,8 @@ assert_contains "error suggests merging to main" "merge to main" "$out"
 
 section "hanko tag --dry-run on a non-prerelease commit"
 # Use a fresh repo to keep this self-contained.
-repo3=$(mkrepo); commit "$repo3" one
+repo3=$(mkrepo)
+commit "$repo3" one
 git -C "$repo3" tag v2.0.0
 commit "$repo3" two
 out=$("$HANKO" --repo "$repo3" tag --dry-run 2>&1)
@@ -148,7 +169,8 @@ section "hanko tag — refuses to overwrite a conflicting tag"
 # unreachable side branch, squat v1.0.1 at a different commit. git describe
 # is reachable-only so hanko's *computation* is unaffected; show-ref is
 # global, so the tag conflict is detected at create time.
-repo=$(mkrepo); commit "$repo" one
+repo=$(mkrepo)
+commit "$repo" one
 git -C "$repo" tag v1.0.0
 git -C "$repo" checkout -q -b side
 commit "$repo" side-one
@@ -156,13 +178,15 @@ git -C "$repo" tag v1.0.1
 git -C "$repo" checkout -q main
 commit "$repo" two
 set +e
-out=$("$HANKO" --repo "$repo" tag 2>&1); code=$?
+out=$("$HANKO" --repo "$repo" tag 2>&1)
+code=$?
 set -e
 assert_exit "exit code" 1 "$code"
 assert_contains "error mentions conflict" "does not point at HEAD" "$out"
 
 section "hanko stamp go-ldflags"
-repo=$(mkrepo); commit "$repo" one
+repo=$(mkrepo)
+commit "$repo" one
 git -C "$repo" tag v1.0.0
 commit "$repo" two
 out=$("$HANKO" --repo "$repo" stamp go-ldflags)
@@ -217,19 +241,22 @@ assert_contains "file contains version line" "org.opencontainers.image.version=1
 section "hanko stamp helm"
 chart=$(mktemp -d)
 mkdir -p "$chart/templates"
-cat > "$chart/Chart.yaml" <<'YAML'
+cat >"$chart/Chart.yaml" <<'YAML'
 apiVersion: v2
 name: demo
 version: 0.0.0
 appVersion: "0.0.0"  # trailing comment
 YAML
 # Repo for version computation:
-helmrepo=$(mkrepo); commit "$helmrepo" one; git -C "$helmrepo" tag v2.0.0; commit "$helmrepo" two
+helmrepo=$(mkrepo)
+commit "$helmrepo" one
+git -C "$helmrepo" tag v2.0.0
+commit "$helmrepo" two
 out=$("$HANKO" --repo "$helmrepo" stamp helm "$chart" --dry-run)
 assert_contains "dry-run mentions version" "version: 0.0.0 → 2.0.1" "$out"
 # File should not have changed on dry-run:
 assert_contains "dry-run does not write" "version: 0.0.0" "$(<"$chart/Chart.yaml")"
-"$HANKO" --repo "$helmrepo" stamp helm "$chart" > /dev/null
+"$HANKO" --repo "$helmrepo" stamp helm "$chart" >/dev/null
 after=$(<"$chart/Chart.yaml")
 assert_contains "applies version" "version: 2.0.1" "$after"
 assert_contains "applies appVersion (quoted)" 'appVersion: "2.0.1"' "$after"
@@ -238,7 +265,7 @@ assert_contains "preserves trailing comment" "# trailing comment" "$after"
 # ── summary ────────────────────────────────────────────────────────────────
 
 printf "\n%d passed, %d failed\n" "$pass" "$fail"
-if (( fail > 0 )); then
+if ((fail > 0)); then
   printf "failed tests:\n"
   for n in "${fail_names[@]}"; do printf "  - %s\n" "$n"; done
   exit 1

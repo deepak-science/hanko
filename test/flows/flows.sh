@@ -16,12 +16,15 @@
 set -euo pipefail
 
 HANKO="${1:-${HANKO:-}}"
-if [[ -z "$HANKO" ]]; then
+if [[ -z $HANKO ]]; then
   echo "building hanko via go build..."
   HANKO="$(mktemp -d)/hanko"
   go build -o "$HANKO" .
 fi
-[[ -x "$HANKO" ]] || { echo "hanko binary not found or not executable: $HANKO" >&2; exit 2; }
+[[ -x $HANKO ]] || {
+  echo "hanko binary not found or not executable: $HANKO" >&2
+  exit 2
+}
 
 # ── tiny assertion framework ───────────────────────────────────────────────
 # Same shape as smoke.sh — kept duplicated rather than extracted because the
@@ -31,17 +34,24 @@ pass=0
 fail=0
 fail_names=()
 
-ok()   { printf "  ok   %s\n" "$1"; pass=$((pass+1)); }
-fail() { printf "  FAIL %s\n        want: %q\n        got:  %q\n" "$1" "$2" "$3"; fail=$((fail+1)); fail_names+=("$1"); }
+ok() {
+  printf "  ok   %s\n" "$1"
+  pass=$((pass + 1))
+}
+fail() {
+  printf "  FAIL %s\n        want: %q\n        got:  %q\n" "$1" "$2" "$3"
+  fail=$((fail + 1))
+  fail_names+=("$1")
+}
 
 assert_eq() {
-  if [[ "$2" == "$3" ]]; then ok "$1"; else fail "$1" "$2" "$3"; fi
+  if [[ $2 == "$3" ]]; then ok "$1"; else fail "$1" "$2" "$3"; fi
 }
 assert_contains() {
-  if [[ "$3" == *"$2"* ]]; then ok "$1"; else fail "$1" "*$2*" "$3"; fi
+  if [[ $3 == *"$2"* ]]; then ok "$1"; else fail "$1" "*$2*" "$3"; fi
 }
 assert_exit() {
-  if [[ "$2" -eq "$3" ]]; then ok "$1"; else fail "$1" "exit $2" "exit $3"; fi
+  if [[ $2 -eq $3 ]]; then ok "$1"; else fail "$1" "exit $2" "exit $3"; fi
 }
 
 # ── repo helpers ───────────────────────────────────────────────────────────
@@ -57,9 +67,9 @@ mkrepo() {
   dir="$(mktemp -d)"
   git -C "$dir" init -q --initial-branch=main
   git -C "$dir" config user.email flow@example.invalid
-  git -C "$dir" config user.name  flow
+  git -C "$dir" config user.name flow
   git -C "$dir" config commit.gpgsign false
-  git -C "$dir" config tag.gpgsign    false
+  git -C "$dir" config tag.gpgsign false
   printf "%s" "$dir"
 }
 
@@ -68,9 +78,9 @@ mkrepo() {
 commit() {
   local repo="$1" msg="$2" date="${3:-2026-01-01T00:00:00Z}"
   local n
-  n=$(( $(cat "$repo/.n" 2>/dev/null || echo 0) + 1 ))
-  echo "$n" > "$repo/.n"
-  echo "$msg" >> "$repo/f"
+  n=$(($(cat "$repo/.n" 2>/dev/null || echo 0) + 1))
+  echo "$n" >"$repo/.n"
+  echo "$msg" >>"$repo/f"
   git -C "$repo" add f .n
   GIT_AUTHOR_DATE="$date" GIT_COMMITTER_DATE="$date" \
     git -C "$repo" commit -q -m "$msg"
@@ -111,8 +121,6 @@ assert_eq "main HEAD past v1.0.0 by 3 → 1.0.3" "1.0.3" "$("$HANKO" --repo "$re
 
 # Walk back through history and verify each tagged-commit gives the clean version:
 sha_v1=$(git -C "$repo" rev-parse v1.0.0)
-sha_v02=$(git -C "$repo" rev-parse v0.2.0)
-sha_v01=$(git -C "$repo" rev-parse v0.1.0)
 
 git -C "$repo" checkout -q "$sha_v1"
 # D-001: detached + tag-at-HEAD emits the tag verbatim.
@@ -123,7 +131,7 @@ git -C "$repo" checkout -q main
 # Detached + feature-rule applies (no patch bump; base 1.0.0 unchanged), so → 1.0.0-detached.1.
 # Not 1.0.1-detached.1 — that would require a "mainline" rule which hanko doesn't apply to detached HEADs.
 git -C "$repo" checkout -q main
-git -C "$repo" checkout -q HEAD~2  # back to c5, detached
+git -C "$repo" checkout -q HEAD~2 # back to c5, detached
 assert_eq "one commit past v1.0.0 (detached) → 1.0.0-detached.1" "1.0.0-detached.1" "$("$HANKO" --repo "$repo" version)"
 git -C "$repo" checkout -q main
 
@@ -138,7 +146,7 @@ commit "$repo" c1
 annotated_tag "$repo" v1.0.0
 commit "$repo" c2
 annotated_tag "$repo" v1.1.0
-commit "$repo" c3  # main moves on past the hotfix base
+commit "$repo" c3 # main moves on past the hotfix base
 
 # Branch hotfix from v1.1.0:
 git -C "$repo" checkout -q -b hotfix/p1 v1.1.0
@@ -150,7 +158,8 @@ assert_eq "hotfix HEAD → 1.1.1-hotfix.2" "1.1.1-hotfix.2" "$got"
 
 # D-011: tagging refuses prereleases unconditionally; no `--allow-prerelease-tag` flag.
 set +e
-out=$("$HANKO" --repo "$repo" tag 2>&1); code=$?
+out=$("$HANKO" --repo "$repo" tag 2>&1)
+code=$?
 set -e
 assert_exit "tag refuses prerelease unconditionally" 1 "$code"
 assert_contains "error mentions prerelease" "pre-release" "$out"
@@ -205,9 +214,9 @@ repo=$(mkrepo)
 commit "$repo" c1
 annotated_tag "$repo" v1.0.0
 commit "$repo" c2
-annotated_tag "$repo" "1.0.1"            # bare semver
+annotated_tag "$repo" "1.0.1" # bare semver
 commit "$repo" c3
-annotated_tag "$repo" "release-frozen"   # non-semver, should be ignored by version parser
+annotated_tag "$repo" "release-frozen" # non-semver, should be ignored by version parser
 commit "$repo" c4
 
 # D-012: hanko passes --match patterns to `git describe`, so non-semver tags like release-frozen are skipped at the source.
@@ -256,7 +265,8 @@ commit "$repo" c2
 
 # hanko on main computes v1.0.1, but the tag exists pointing at dead-end:
 set +e
-out=$("$HANKO" --repo "$repo" tag 2>&1); code=$?
+out=$("$HANKO" --repo "$repo" tag 2>&1)
+code=$?
 set -e
 assert_exit "tag refuses conflict" 1 "$code"
 assert_contains "error mentions conflict" "does not point at HEAD" "$out"
@@ -266,11 +276,15 @@ assert_contains "error mentions conflict" "does not point at HEAD" "$out"
 
 section "S7 — release/1.0 maintained while mainline reaches v3.x"
 repo=$(mkrepo)
-commit "$repo" c1; annotated_tag "$repo" v1.0.0
-commit "$repo" c2; annotated_tag "$repo" v1.1.0
-commit "$repo" c3; annotated_tag "$repo" v2.0.0
-commit "$repo" c4; annotated_tag "$repo" v3.0.0
-commit "$repo" c5  # main HEAD is 1 commit past v3.0.0
+commit "$repo" c1
+annotated_tag "$repo" v1.0.0
+commit "$repo" c2
+annotated_tag "$repo" v1.1.0
+commit "$repo" c3
+annotated_tag "$repo" v2.0.0
+commit "$repo" c4
+annotated_tag "$repo" v3.0.0
+commit "$repo" c5 # main HEAD is 1 commit past v3.0.0
 
 git -C "$repo" checkout -q -b release/1.0 v1.0.0
 commit "$repo" oldfix-1
@@ -288,11 +302,11 @@ section "S8 — end-to-end stamping pipeline against multi-tag history"
 repo=$(mkrepo)
 
 # Set up the Go program:
-cat > "$repo/go.mod" <<'EOF'
+cat >"$repo/go.mod" <<'EOF'
 module example.invalid/demo
 go 1.24
 EOF
-cat > "$repo/main.go" <<'EOF'
+cat >"$repo/main.go" <<'EOF'
 package main
 import "fmt"
 var (
@@ -307,7 +321,7 @@ EOF
 
 # Set up the Helm chart:
 mkdir -p "$repo/charts/demo"
-cat > "$repo/charts/demo/Chart.yaml" <<'EOF'
+cat >"$repo/charts/demo/Chart.yaml" <<'EOF'
 apiVersion: v2
 name: demo
 version: 0.0.0
@@ -329,7 +343,7 @@ assert_eq "version on this multi-tag repo" "$expected_semver" "$("$HANKO" --repo
 
 # 1. Go ldflags — build the binary and check it embeds the right strings.
 ldflags=$("$HANKO" --repo "$repo" stamp go-ldflags)
-( cd "$repo" && go build -ldflags "$ldflags" -o "$repo/demo" . )
+(cd "$repo" && go build -ldflags "$ldflags" -o "$repo/demo" .)
 embedded=$("$repo/demo")
 assert_contains "embedded version=$expected_semver" "version=$expected_semver" "$embedded"
 assert_contains "embedded commit=full sha" "commit=$(git -C "$repo" rev-parse HEAD)" "$embedded"
@@ -351,7 +365,7 @@ assert_contains "version label" "--label org.opencontainers.image.version=$expec
 assert_contains "created label is commit date" "--label org.opencontainers.image.created=2026-01-01T00:00:00" "$out"
 
 # 4. Helm — edit the chart in place.
-"$HANKO" --repo "$repo" stamp helm "$repo/charts/demo" > /dev/null
+"$HANKO" --repo "$repo" stamp helm "$repo/charts/demo" >/dev/null
 chart_after=$(<"$repo/charts/demo/Chart.yaml")
 assert_contains "Chart.yaml has new version" "version: $expected_semver" "$chart_after"
 assert_contains "Chart.yaml has quoted appVersion" "appVersion: \"$expected_semver\"" "$chart_after"
@@ -363,7 +377,8 @@ assert_contains "Chart.yaml preserves trailing comment" "# bumped by hanko in CI
 
 section "S10 — refuse on shallow clone (D-004)"
 src=$(mkrepo)
-commit "$src" c1; annotated_tag "$src" v1.0.0
+commit "$src" c1
+annotated_tag "$src" v1.0.0
 commit "$src" c2
 bare=$(mktemp -d)/shallow-src.git
 git init -q --bare --initial-branch=main "$bare"
@@ -376,7 +391,8 @@ shallow=$(mktemp -d)/shallow-clone
 git clone -q --depth 1 --branch main "file://$bare" "$shallow"
 
 set +e
-out=$("$HANKO" --repo "$shallow" version 2>&1); code=$?
+out=$("$HANKO" --repo "$shallow" version 2>&1)
+code=$?
 set -e
 assert_exit "version refuses on shallow" 1 "$code"
 assert_contains "error names the problem" "shallow" "$out"
@@ -418,7 +434,7 @@ assert_eq "rerun --push is idempotent" "v1.0.1" "$got"
 # ── summary ────────────────────────────────────────────────────────────────
 
 printf "\n%d passed, %d failed\n" "$pass" "$fail"
-if (( fail > 0 )); then
+if ((fail > 0)); then
   printf "failed tests:\n"
   for n in "${fail_names[@]}"; do printf "  - %s\n" "$n"; done
   exit 1
