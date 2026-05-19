@@ -53,9 +53,8 @@ Compute a meaningful SemVer from tags + commit count + branch.
   - `hotfix/*`        → `<major>.<minor>.<patch+1>-hotfix.<n>`
   - everything else   → `<base>-<sanitized-branch>.<n>` (pre-release)
 - [x] Append build metadata: `+<commits>.<short-sha>` for `FullSemVer`.
-- [ ] Bump-direction hints from commit-message convention (Conventional Commits parser: `feat!:`/`feat:`/`fix:` → major / minor / patch).
-  Behind a config flag, off by default in M1.
-  **Deferred — revisit with `.hanko.yaml`.**
+- [~] Bump-direction hints from commit-message convention (Conventional Commits parser).
+  Moved to its own milestone, **M5e — Bump strategies**, now that `.hanko.yaml` is wired in M5a.
 - [x] Handle edge cases:
   - [x] No tags in repo → `0.1.0-<branch>.<n>` (always pre-release; see `docs/design-decisions.md`)
   - [~] Detached HEAD → falls back to `"detached"` sentinel; `--source` flag still TBD (D-001)
@@ -206,6 +205,39 @@ adjacent scope.
 - [ ] Pre-release refusal mirrors D-011; opt out via `seal.refuse-prerelease: false`.
 - [ ] `hanko seal --dry-run` walks the pipeline without mutating: shows the stamp diffs, lists the hooks that would run, prints the commit message and target tag.
 - [ ] Smoke + flow coverage: pyproject.toml + Chart.yaml in one repo; pre-commit hook that generates CHANGELOG.md via `git-cliff`; verify the resulting single commit contains all expected files.
+
+### M5e — Bump strategies
+
+Today every bump is "+1 in the direction the branch's `increment` field names" (D-013).
+That's the *fixed* strategy.
+Other strategies decide the *direction* of the bump from commit content rather than from branch config alone.
+
+- [ ] Schema: reintroduce a top-level `bump-strategy:` (or per-branch override) with values `fixed` (current default, today's behaviour) and `conventional-commits` (parse commit messages between latest tag and HEAD).
+- [ ] **Conventional Commits parser.**
+  Inspect `git log <latest-tag>..HEAD` commit subjects:
+  - `feat!:` / `fix!:` / `BREAKING CHANGE:` in body → `major`
+  - `feat:` → `minor`
+  - `fix:` → `patch`
+  - other (`chore:`, `docs:`, `refactor:`, `test:`, `style:`, `perf:`, etc.) → contributes nothing on its own
+  - no matching commits → fall back to the branch's declared `increment`, defaulting to `patch`
+  Hanko owns this; we don't shell out to a third-party tool. The parser is small and well-defined.
+- [ ] **`hanko version` consumes the strategy.**
+  Output reflects the strategy-determined direction, not a hardcoded one.
+- [ ] **`hanko tag` and `hanko seal` respect it.**
+  The tag name is whatever `version` computed; no separate logic.
+- [ ] **Manual override flag.**
+  `hanko version --bump {patch,minor,major,none}` short-circuits the strategy for one invocation.
+  Useful for "I know I broke the API but the commit messages don't say so."
+- [ ] **Per-branch override.**
+  `branches[].bump-strategy: fixed` lets a hotfix branch ignore commit-message hints while mainline reads them.
+- [ ] Tests: golden cases per strategy; commit-message edge cases (multi-line, scoped types, malformed); fall-through behaviour.
+
+Why hanko owns this rather than relegating to `git-cliff` or `release-please`:
+those tools generate changelogs and ship PRs, which is a different job.
+Hanko's job is "tell me what this commit calls itself" — the bump direction is part of that identity.
+Asking the user to run two tools to answer one question is poor ergonomics.
+
+**Exit criteria:** a repo with `bump-strategy: conventional-commits` and a mix of `feat:` and `fix:` commits computes the right next version without any human-supplied hint.
 
 ### M5d — Out of scope for v1 (capture, defer)
 

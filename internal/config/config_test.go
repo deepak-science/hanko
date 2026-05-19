@@ -60,8 +60,8 @@ on-shallow: warn
 		t.Errorf("OnShallow = %q, want override", cfg.OnShallow)
 	}
 	// Untouched keys should retain defaults.
-	if cfg.Mode != Defaults().Mode {
-		t.Errorf("Mode = %q, want default %q", cfg.Mode, Defaults().Mode)
+	if cfg.InitialVersion != Defaults().InitialVersion {
+		t.Errorf("InitialVersion = %q, want default %q", cfg.InitialVersion, Defaults().InitialVersion)
 	}
 	if len(cfg.Branches) != len(Defaults().Branches) {
 		t.Errorf("Branches should fall back to defaults; got len %d", len(cfg.Branches))

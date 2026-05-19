@@ -59,6 +59,20 @@ Add to this as you go; revisit collectively rather than litigating each one in i
   Mixed-shape repos get latest-wins, which is "weird but predictable" — mixed-shape repos should pick one shape.
   More exotic prefixes (`release-1.2.3`, `<pkg>-v1.2.3`) are out of scope until `.hanko.yaml` lands.
 
+- **D-013 — Mainline bumps patch by 1, not by commit count.**
+  GitVersion's `mode: ContinuousDeployment` heritage was `patch = base.patch + commits-since-tag`.
+  Killed for several reasons:
+  (1) the number is content-free — `1.2.3 → 1.2.8` doesn't mean "5 fixes shipped," it means "5 commits happened" (some likely refactors, docs, or features that should have been minor);
+  (2) it contradicts SemVer's PATCH-is-for-bug-fixes contract;
+  (3) the commit count already lives in build metadata (`+5.abc1234`), so `patch += n` is a redundant restatement;
+  (4) it makes `hanko version` a state-machine step (version drifts forward as commits land) rather than the identity query we've designed for elsewhere;
+  (5) forgetting to tag balloons the patch number to absurd values.
+  Replaced with a one-time bump per `increment` rule (`patch` → +1), gated on `n > 0` for mainline so commits at the tag emit the tag verbatim.
+  Pre-release branches were already bumping +1 — no change there.
+  Counter remains visible in `FullSemVer`'s build metadata.
+  Side effect: `mode: continuous-delivery` config key is removed; it had no effect, since the +n behaviour it named is gone.
+  Future bump strategies (conventional commits, manual override) will choose the *direction* of the +1 bump, not its magnitude.
+
 - **D-012 — `git describe` filters to semver-shaped tags via `--match` patterns.**
   Two patterns passed: `v[0-9]*.[0-9]*.[0-9]*` and `[0-9]*.[0-9]*.[0-9]*`.
   Non-semver marker tags like `release-frozen` are skipped at the source.

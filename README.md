@@ -55,7 +55,6 @@ A repo with no config file is treated as if it had this:
 # Equivalent to running with no .hanko.yaml — print live via `hanko config show`.
 
 tag-prefix: "^v?(.+)$"           # regex applied to existing tags to extract a semver; write-side follows the repo's existing tag shape
-mode: continuous-delivery        # commits on mainline advance patch; non-mainline gets pre-release labels
 dirty-suffix: true               # dirty worktree appends `.dirty` to build metadata
 initial-version: "0.1.0"         # base used when no semver tag is reachable
 on-shallow: refuse               # exit non-zero on shallow clones — see D-004
@@ -68,7 +67,7 @@ branches:                        # evaluated in order, first regex match wins
   - name: mainline
     regex: ^(main|master)$
     is-mainline: true
-    increment: patch             # patch += commits-since-tag
+    increment: patch             # past the tag → patch += 1 (one-time, see D-013)
     label: ""                    # no pre-release suffix → release-shaped
   - name: release
     regex: ^release/(\d+)\.(\d+)$
@@ -79,13 +78,27 @@ branches:                        # evaluated in order, first regex match wins
     minor-from: 2
   - name: hotfix
     regex: ^hotfix/.*$
-    increment: patch             # one-time +1, not progressive
+    increment: patch             # one-time +1, with prerelease counter
     label: hotfix                # → 1.2.4-hotfix.N
   - name: feature
     regex: .*
     increment: none
     label: "{branch}"            # → 1.2.3-feature-foo.N
 ```
+
+The commit count past the latest tag lives **only in build metadata** (`+N.short-sha`), not in the SemVer core.
+A repo where v1.2.3 is the latest tag computes:
+
+| State                        | SemVer      | FullSemVer                  |
+| ---------------------------- | ----------- | --------------------------- |
+| at v1.2.3                    | `1.2.3`     | `1.2.3+0.abc1234`           |
+| 1 commit past on main        | `1.2.4`     | `1.2.4+1.abc1234`           |
+| 47 commits past on main      | `1.2.4`     | `1.2.4+47.abc1234`          |
+| on a hotfix branch (n=2)     | `1.2.4-hotfix.2`     | `1.2.4-hotfix.2+2.abc1234`     |
+| on `feature/foo` (n=3)       | `1.2.3-feature-foo.3` | `1.2.3-feature-foo.3+3.abc1234`|
+
+The "next" patch is decided when `hanko tag` runs, not by how many commits have accumulated.
+That keeps the SemVer slot honest — it names a release, doesn't count commits.
 
 To override any of these, create `.hanko.yaml` at the repo root with just the keys you want to change — the rest fall back to defaults.
 See [`docs/hanko-yaml.md`](./docs/hanko-yaml.md) for the full schema reference.

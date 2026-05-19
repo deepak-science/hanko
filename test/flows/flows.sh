@@ -116,8 +116,9 @@ commit "$repo" c5
 commit "$repo" c6
 commit "$repo" c7
 
-# At HEAD (3 commits past v1.0.0):
-assert_eq "main HEAD past v1.0.0 by 3 → 1.0.3" "1.0.3" "$("$HANKO" --repo "$repo" version)"
+# At HEAD (3 commits past v1.0.0).
+# D-013: one-time +1 bump regardless of commit count; counter stays in build metadata.
+assert_eq "main HEAD past v1.0.0 by 3 → 1.0.1" "1.0.1" "$("$HANKO" --repo "$repo" version)"
 
 # Walk back through history and verify each tagged-commit gives the clean version:
 sha_v1=$(git -C "$repo" rev-parse v1.0.0)
@@ -170,13 +171,13 @@ assert_contains "error suggests merging to main" "merge to main" "$out"
 git -C "$repo" checkout -q main
 GIT_AUTHOR_DATE="2026-01-01T00:00:00Z" GIT_COMMITTER_DATE="2026-01-01T00:00:00Z" \
   git -C "$repo" merge --no-ff -X theirs -q -m "Merge hotfix/p1" hotfix/p1
-# After merge: main is 3 commits past v1.1.0 (c3 + fix-1 + fix-2 + merge commit, with the prior counter at v1.1.0 = 0).
+# After merge: main is past v1.1.0; D-013 bumps patch by 1.
 # Latest reachable semver tag is v1.1.0 (no prerelease tags were created because D-011 prevented them).
 got=$("$HANKO" --repo "$repo" version)
-assert_eq "main after merge-back computes from v1.1.0 → 1.1.4" "1.1.4" "$got"
+assert_eq "main after merge-back computes from v1.1.0 → 1.1.1" "1.1.1" "$got"
 # Tag the merge commit normally:
 got=$("$HANKO" --repo "$repo" tag 2>&1)
-assert_eq "release tag after merge-back" "v1.1.4" "$got"
+assert_eq "release tag after merge-back" "v1.1.1" "$got"
 
 # ── S3 — Release branch maintenance ────────────────────────────────────────
 # Repo with v1.0.0 on main, then main moves to v2.0.0.
@@ -195,11 +196,11 @@ git -C "$repo" checkout -q -b release/1.0 v1.0.0
 commit "$repo" fix-a
 commit "$repo" fix-b
 
-assert_eq "release/1.0 HEAD → 1.0.2" "1.0.2" "$("$HANKO" --repo "$repo" version)"
+assert_eq "release/1.0 HEAD → 1.0.1" "1.0.1" "$("$HANKO" --repo "$repo" version)"
 
 # release/x.y is non-prerelease, so plain `hanko tag` works:
 got=$("$HANKO" --repo "$repo" tag 2>&1)
-assert_eq "tag on release branch → v1.0.2" "v1.0.2" "$got"
+assert_eq "tag on release branch → v1.0.1" "v1.0.1" "$got"
 
 # Main remains independent:
 git -C "$repo" checkout -q main
@@ -222,12 +223,12 @@ commit "$repo" c4
 # D-012: hanko passes --match patterns to `git describe`, so non-semver tags like release-frozen are skipped at the source.
 # Describe walks back to the most recent semver-shaped tag (bare `1.0.1` here, 2 commits past HEAD).
 got=$("$HANKO" --repo "$repo" version)
-assert_eq "non-semver tag is skipped; walks back to 1.0.1 → 1.0.3" "1.0.3" "$got"
+assert_eq "non-semver tag is skipped; walks back to 1.0.1 → 1.0.2" "1.0.2" "$got"
 
 # Same result even after we delete the rogue tag, by construction:
 git -C "$repo" tag -d release-frozen
 got=$("$HANKO" --repo "$repo" version)
-assert_eq "deleting the rogue tag doesn't change the answer" "1.0.3" "$got"
+assert_eq "deleting the rogue tag doesn't change the answer" "1.0.2" "$got"
 
 # ── S5 — Detached HEAD on a tag (CI tag-push event) ────────────────────────
 # D-001: hanko emits the tag's version verbatim when detached at a tagged commit.
@@ -290,7 +291,7 @@ git -C "$repo" checkout -q -b release/1.0 v1.0.0
 commit "$repo" oldfix-1
 commit "$repo" oldfix-2
 
-assert_eq "release/1.0 sees v1.0.0 as latest reachable → 1.0.2" "1.0.2" "$("$HANKO" --repo "$repo" version)"
+assert_eq "release/1.0 sees v1.0.0 as latest reachable → 1.0.1" "1.0.1" "$("$HANKO" --repo "$repo" version)"
 git -C "$repo" checkout -q main
 assert_eq "main sees v3.0.0 → 3.0.1" "3.0.1" "$("$HANKO" --repo "$repo" version)"
 
@@ -337,8 +338,8 @@ commit "$repo" "post-tag-1"
 commit "$repo" "post-tag-2"
 commit "$repo" "post-tag-3"
 
-# Expected version: 1.1.3
-expected_semver="1.1.3"
+# Expected version: 1.1.1 (D-013: one-time +1 bump, regardless of commit count).
+expected_semver="1.1.1"
 assert_eq "version on this multi-tag repo" "$expected_semver" "$("$HANKO" --repo "$repo" version)"
 
 # 1. Go ldflags — build the binary and check it embeds the right strings.

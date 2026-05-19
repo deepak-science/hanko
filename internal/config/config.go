@@ -27,10 +27,6 @@ type Config struct {
 	// group is the semver. (D-002, future-proofed for non-`v` prefixes.)
 	TagPrefix string `yaml:"tag-prefix,omitempty"`
 
-	// "continuous-delivery" (current M1 behaviour) or "mainline" (every commit
-	// on a mainline branch bumps patch; gitversion-compat).
-	Mode string `yaml:"mode,omitempty"`
-
 	// Whether dirty worktree appends `.dirty` to build metadata.
 	// Pointer-bool to distinguish "unset" from "explicitly false".
 	DirtySuffix *bool `yaml:"dirty-suffix,omitempty"`
@@ -40,6 +36,12 @@ type Config struct {
 
 	// "refuse" | "warn" | "ignore".
 	OnShallow string `yaml:"on-shallow,omitempty"`
+
+	// "fixed" (default) → use each branch's declared `increment`.
+	// "conventional-commits" → parse <latest-tag>..HEAD subjects to choose
+	// the bump direction; fall back to the branch's `increment` when no
+	// commit message contributes a signal.
+	BumpStrategy string `yaml:"bump-strategy,omitempty"`
 
 	// Glob patterns passed to `git describe --match` for tag discovery.
 	// Sibling to TagPrefix: the regex extracts a semver from a found tag, the
@@ -79,10 +81,10 @@ func Defaults() *Config {
 	t := true
 	return &Config{
 		TagPrefix:      `^v?(.+)$`,
-		Mode:           "continuous-delivery",
 		DirtySuffix:    &t,
 		InitialVersion: "0.1.0",
 		OnShallow:      "refuse",
+		BumpStrategy:   "fixed",
 		TagMatch: []string{
 			`v[0-9]*.[0-9]*.[0-9]*`,
 			`[0-9]*.[0-9]*.[0-9]*`,
@@ -146,9 +148,6 @@ func mergeOnDefaults(user *Config) *Config {
 	if user.TagPrefix != "" {
 		out.TagPrefix = user.TagPrefix
 	}
-	if user.Mode != "" {
-		out.Mode = user.Mode
-	}
 	if user.DirtySuffix != nil {
 		out.DirtySuffix = user.DirtySuffix
 	}
@@ -157,6 +156,9 @@ func mergeOnDefaults(user *Config) *Config {
 	}
 	if user.OnShallow != "" {
 		out.OnShallow = user.OnShallow
+	}
+	if user.BumpStrategy != "" {
+		out.BumpStrategy = user.BumpStrategy
 	}
 	if len(user.TagMatch) > 0 {
 		out.TagMatch = user.TagMatch

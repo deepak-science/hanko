@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/dmallubhotla/hanko/internal/bump"
 	"github.com/dmallubhotla/hanko/internal/config"
 	"github.com/dmallubhotla/hanko/internal/gitinfo"
 )
@@ -71,7 +72,8 @@ func Compute(info gitinfo.Info, cfg *config.Config) (Version, error) {
 		v.PreRelease = fmt.Sprintf("%s.%d", sanitizeBranch(branch), n)
 	} else {
 		policy, captures := matchBranch(cfg.Branches, branch)
-		applyPolicy(&v, policy, captures, base, branch, n)
+		direction := bumpDirection(cfg, policy, info.Commits)
+		applyPolicy(&v, policy, captures, base, branch, n, direction)
 	}
 
 	v.IsPreRelease = v.PreRelease != ""
@@ -190,10 +192,27 @@ func matchBranch(policies []config.BranchPolicy, branch string) (config.BranchPo
 	return config.BranchPolicy{Increment: "none", Label: "{branch}"}, []string{branch}
 }
 
+// bumpDirection returns the increment direction to apply for this commit,
+// honouring the configured strategy. For "fixed" (default) it's whatever the
+// branch policy declared. For "conventional-commits" it's the highest-
+// precedence direction signalled by the commits since the last tag, falling
+// back to the branch's declared `increment` when nothing matched.
+func bumpDirection(cfg *config.Config, p config.BranchPolicy, commits []gitinfo.Commit) string {
+	if cfg.BumpStrategy != "conventional-commits" {
+		return p.Increment
+	}
+	if d := bump.Parse(commits); d != bump.None {
+		return d.String()
+	}
+	return p.Increment
+}
+
 // applyPolicy fills v.{Major,Minor,Patch,PreRelease} based on the matched
-// policy. Two shapes: mainline (commits advance the core), non-mainline
-// (static bump + pre-release counter from commit count).
-func applyPolicy(v *Version, p config.BranchPolicy, captures []string, base semverBase, branch string, n int) {
+// policy. Two shapes: mainline (one-time core bump when n>0), non-mainline
+// (one-time core bump + pre-release counter from commit count). `direction`
+// overrides p.Increment for the actual bump magnitude — bump strategies
+// decide *which way* to step, not *how many* (D-013).
+func applyPolicy(v *Version, p config.BranchPolicy, captures []string, base semverBase, branch string, n int, direction string) {
 	major, minor, patch := base.major, base.minor, base.patch
 
 	// Capture-group bindings (1-indexed; captures[0] is full match).
@@ -208,22 +227,18 @@ func applyPolicy(v *Version, p config.BranchPolicy, captures []string, base semv
 		}
 	}
 
-	if p.IsMainline {
-		// Continuous-delivery: commits advance the core; no pre-release counter unless Label is set.
-		switch p.Increment {
-		case "minor":
-			minor += n
-			patch = 0
-		case "major":
-			major += n
-			minor = 0
-			patch = 0
-		default: // "patch" and ""
-			patch += n
-		}
+	// Bump direction & magnitude is the same on mainline and non-mainline:
+	// one step per `Increment`. Mainline at the tag (n=0) emits the tag
+	// verbatim (no bump). Non-mainline still bumps even at n=0 — the label
+	// makes the result a pre-release, so the bumped core is the "in-progress
+	// next release" the prerelease is targeting.
+	// D-013: we used to do `patch += n` on mainline; that confused "version"
+	// (a declared identity) with "build counter" (commit position). The
+	// counter still lives in build metadata.
+	if p.IsMainline && n == 0 {
+		// at the tag — no bump
 	} else {
-		// Static bump (one-time), pre-release counter carries the commit count.
-		switch p.Increment {
+		switch direction {
 		case "patch":
 			patch++
 		case "minor":

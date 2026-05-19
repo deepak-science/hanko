@@ -96,10 +96,11 @@ assert_eq "at tag → 1.2.3" "1.2.3" "$got"
 commit "$repo" two
 commit "$repo" three
 got=$("$HANKO" --repo "$repo" version)
-assert_eq "2 commits past tag on main → 1.2.5" "1.2.5" "$got"
+# D-013: mainline past a tag bumps patch by 1 — once — regardless of commit count.
+assert_eq "2 commits past tag on main → 1.2.4" "1.2.4" "$got"
 
 got=$("$HANKO" --repo "$repo" version --format gha | LC_ALL=C sort)
-expected=$(printf "branch=main\nfull=1.2.5\nis-prerelease=false\nmajor-minor=1.2\nmajor=1\nminor=2\npatch=5\nshort-sha=%s" "$(git -C "$repo" rev-parse --short HEAD)")
+expected=$(printf "branch=main\nfull=1.2.4\nis-prerelease=false\nmajor-minor=1.2\nmajor=1\nminor=2\npatch=4\nshort-sha=%s" "$(git -C "$repo" rev-parse --short HEAD)")
 assert_eq "--format gha shape" "$expected" "$got"
 
 section "hanko version on a feature branch"

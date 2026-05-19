@@ -37,12 +37,10 @@ Don't read `$HOME` configs — hanko is a project-scoped tool.
 # (Resolves design-decisions.md D-002.)
 tag-prefix: "^v?(.+)$"
 
-# Versioning mode.
-# Two values:
-#   continuous-delivery — pre-release labels on non-mainline branches (current M1 behaviour)
-#   mainline            — mirrors GitVersion's `mode: mainline`: every commit on a mainline
-#                         branch bumps patch; off-mainline branches still get pre-release labels.
-mode: continuous-delivery
+# (No `mode:` key today — see D-013: the GitVersion-inherited mode field
+# named a behaviour we no longer implement. A future `bump-strategy:` key,
+# scoped in ROADMAP M5e, will reintroduce the choice between `fixed` (today)
+# and `conventional-commits` (parse commit messages to pick direction).)
 
 # Whether a dirty worktree appends `.dirty` to build metadata.
 # Off → dirty is silently ignored in version output (still surfaced as a warning on stderr).

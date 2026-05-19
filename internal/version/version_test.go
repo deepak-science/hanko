@@ -25,13 +25,16 @@ func TestCompute(t *testing.T) {
 			wantFull:   "1.2.3+0.abc1234",
 		},
 		{
-			name: "mainline with commits since tag",
+			// D-013: mainline past a tag bumps patch by 1 — once — regardless
+			// of how many commits have piled up. The commit count carries
+			// only in build metadata.
+			name: "mainline with commits since tag bumps patch once",
 			info: gitinfo.Info{
 				Branch: "main", LatestTag: "v1.2.3",
 				CommitsSinceTag: 5, ShortSha: "abc1234",
 			},
-			wantSemVer: "1.2.8",
-			wantFull:   "1.2.8+5.abc1234",
+			wantSemVer: "1.2.4",
+			wantFull:   "1.2.4+5.abc1234",
 		},
 		{
 			name: "master is mainline too",
@@ -39,8 +42,8 @@ func TestCompute(t *testing.T) {
 				Branch: "master", LatestTag: "v0.5.0",
 				CommitsSinceTag: 2, ShortSha: "abc1234",
 			},
-			wantSemVer: "0.5.2",
-			wantFull:   "0.5.2+2.abc1234",
+			wantSemVer: "0.5.1",
+			wantFull:   "0.5.1+2.abc1234",
 		},
 		{
 			name: "release branch x.y bumps patch",
@@ -48,8 +51,8 @@ func TestCompute(t *testing.T) {
 				Branch: "release/2.3", LatestTag: "v2.3.0",
 				CommitsSinceTag: 4, ShortSha: "abc1234",
 			},
-			wantSemVer: "2.3.4",
-			wantFull:   "2.3.4+4.abc1234",
+			wantSemVer: "2.3.1",
+			wantFull:   "2.3.1+4.abc1234",
 		},
 		{
 			name: "hotfix branch is pre-release of next patch",

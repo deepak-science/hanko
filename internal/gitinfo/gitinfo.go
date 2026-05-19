@@ -26,6 +26,10 @@ type Info struct {
 	// "2026-01-01T00:00:00Z"). Used as `org.opencontainers.image.created`
 	// and for `-X main.date=...` ldflags. Deterministic per HEAD.
 	CommitDate string
+	// Commits enumerated in <LatestTag>..HEAD (newest first). Populated by
+	// Read so the conventional-commits bump strategy can read subject lines
+	// without a second gitinfo pass.
+	Commits []Commit
 }
 
 // ErrNoCommits indicates the repo has been initialised but has no commits.
@@ -107,7 +111,59 @@ func Read(path string, tagMatchGlobs []string) (Info, error) {
 		info.CommitDate = out
 	}
 
+	// Enumerate commits in <LatestTag>..HEAD so the bump strategy can read
+	// them without re-shelling-out. Cost is one extra git log; negligible for
+	// normal repos.
+	if cs, err := CommitsSince(path, info.LatestTag); err == nil {
+		info.Commits = cs
+	}
+
 	return info, nil
+}
+
+// Commit is one entry from `git log <range>` — subject + body.
+// Body is empty for single-line commits.
+type Commit struct {
+	Subject string
+	Body    string
+}
+
+// CommitsSince returns the commits in `<tag>..HEAD`, newest first.
+// If `tag` is empty, returns every commit reachable from HEAD.
+// Each commit gets its subject and body separately so the conventional-commits
+// parser can distinguish a `BREAKING CHANGE:` footer from a subject-line marker.
+func CommitsSince(repo, tag string) ([]Commit, error) {
+	revRange := "HEAD"
+	if tag != "" {
+		revRange = tag + "..HEAD"
+	}
+	// `%s` = subject, `%b` = body, `%x00` = NUL separator. Use a record
+	// separator that can't appear in subjects/bodies so we can split robustly.
+	const recordSep = "\x1e" // ASCII Record Separator
+	const fieldSep = "\x1f"  // ASCII Unit Separator
+	format := "--format=" + fieldSep + "%s" + fieldSep + "%b" + recordSep
+	out, err := run(repo, "log", revRange, format)
+	if err != nil {
+		// git log returns non-zero when the range is empty, etc.
+		// Treat as "no commits" rather than failure.
+		return nil, nil
+	}
+	var commits []Commit
+	for _, rec := range strings.Split(out, recordSep) {
+		rec = strings.TrimLeft(rec, "\n")
+		if rec == "" {
+			continue
+		}
+		parts := strings.SplitN(rec, fieldSep, 3)
+		if len(parts) < 3 {
+			continue
+		}
+		commits = append(commits, Commit{
+			Subject: parts[1],
+			Body:    strings.TrimSpace(parts[2]),
+		})
+	}
+	return commits, nil
 }
 
 func run(dir string, args ...string) (string, error) {
