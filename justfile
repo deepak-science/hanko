@@ -43,18 +43,12 @@ chores:
     nix develop --command go mod tidy
     nix develop --command gomod2nix
 
-# release: bump flake.nix to the hanko-computed semver, commit, tag, push.
-# Uses hanko from the devshell (self-dogfood). If hanko's source is broken,
-# fall back: `nix develop --command go run . stamp nix` etc.
+# release: hanko-on-hanko self-dogfood via `hanko seal`.
+# Reads .hanko.yaml for stamp-targets + seal config (commit, tag, push).
+# Preview with `just release-plan` before running for real.
 release:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    if [ -n "$(git status --porcelain)" ]; then
-        echo "worktree dirty; commit or stash before releasing" >&2
-        exit 1
-    fi
-    nix develop --command hanko stamp nix
-    ver=$(nix develop --command hanko version)
-    git add flake.nix
-    git commit -m "Release ${ver}"
-    nix develop --command hanko tag --push
+    nix develop --command hanko seal
+
+# release-plan: print what `just release` would do without mutating anything.
+release-plan:
+    nix develop --command hanko seal --dry-run

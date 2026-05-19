@@ -1,0 +1,20 @@
+# hanko's own .hanko.yaml — used by `just release` (which calls `hanko seal`).
+#
+# The seal pipeline:
+#   1. Pre-flight (refuses dirty worktree / detached HEAD / pre-release)
+#   2. Apply stamp-targets to the computed version
+#   3. Run seal.pre-commit hooks (none today)
+#   4. Single release commit
+#   5. Annotated tag (D-002 prefix mirroring)
+#   6. git push --atomic for commit + tag
+
+stamp-targets:
+  - path: flake.nix
+    format: nix
+    key: version
+
+seal:
+  commit-message: "Release {semver}"
+  push-remote: origin
+  # refuse-prerelease defaults to true; uncomment to seal feature branches:
+  # refuse-prerelease: false
