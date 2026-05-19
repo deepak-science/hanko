@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strings"
 
 	"github.com/dmallubhotla/hanko/internal/gittag"
 	"github.com/dmallubhotla/hanko/internal/version"
@@ -60,7 +61,14 @@ var tagCmd = &cobra.Command{
 			if err != nil {
 				return fmt.Errorf("compute version: %w", err)
 			}
-			name = "v" + v.SemVer
+			// D-002: follow the existing repo's tag-prefix convention.
+			// If the latest reachable tag is bare (`1.2.3`), keep new tags bare; if `v`-prefixed, keep them `v`-prefixed.
+			// The bootstrap case is handled by `--initial` (verbatim value).
+			prefix := ""
+			if strings.HasPrefix(info.LatestTag, "v") {
+				prefix = "v"
+			}
+			name = prefix + v.SemVer
 
 			// Pre-flight checks.
 			// Order matters: cheap state checks before any git mutation, and the idempotency check before the conflict check (because "already at HEAD" looks like a conflict to naive tag-existence queries).

@@ -52,6 +52,13 @@ Add to this as you go; revisit collectively rather than litigating each one in i
   After the bootstrap tag exists, normal computation takes over — `--initial` is unusable a second time.
   Anyone with a hard need to mark a hotfix iteration still uses `git tag` by hand.
 
+- **D-002 — Tag prefix policy: follow the existing repo's convention.**
+  Read side accepts both `v1.2.3` and `1.2.3` (via `v?` in the tag regex).
+  Write side (`hanko tag`) detects the prefix from `info.LatestTag` and mirrors it: latest tag starts with `v` → new tag uses `v`; bare → bare.
+  Bootstrap is handled by `--initial <version>` taking the value verbatim (see D-011).
+  Mixed-shape repos get latest-wins, which is "weird but predictable" — mixed-shape repos should pick one shape.
+  More exotic prefixes (`release-1.2.3`, `<pkg>-v1.2.3`) are out of scope until `.hanko.yaml` lands.
+
 - **D-012 — `git describe` filters to semver-shaped tags via `--match` patterns.**
   Two patterns passed: `v[0-9]*.[0-9]*.[0-9]*` and `[0-9]*.[0-9]*.[0-9]*`.
   Non-semver marker tags like `release-frozen` are skipped at the source.
@@ -101,14 +108,6 @@ Add to this as you go; revisit collectively rather than litigating each one in i
   Build metadata doesn't affect semver ordering — feels right.
 
 ## Open
-
-### M1 — version computation
-
-- **D-002 — Tag prefix policy.**
-  Real repos use `v1.2.3`, some use bare `1.2.3`, occasionally `release-1.2.3`.
-  M1 assumes `v?<semver>` (leading `v` optional).
-  Should we support a configurable tag-prefix regex now or wait for `.hanko.yaml`?
-  Leaning: hardcode `v?` for M1, surface in `.hanko.yaml` later.
 
 ### Workflow shape on ephemeral self-hosted runners
 

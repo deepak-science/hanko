@@ -125,6 +125,15 @@ section "hanko tag — idempotent rerun"
 got=$("$HANKO" --repo "$repo" tag)
 assert_eq "second run echoes existing tag" "v1.0.1" "$got"
 
+section "hanko tag — follows existing bare-tag convention (D-002)"
+# Bootstrap with a bare tag, then a follow-up `hanko tag` should also be bare.
+repoBareTag=$(mkrepo)
+commit "$repoBareTag" one
+git -C "$repoBareTag" tag 1.0.0
+commit "$repoBareTag" two
+got=$("$HANKO" --repo "$repoBareTag" tag)
+assert_eq "creates bare 1.0.1 (no auto-v-prefix)" "1.0.1" "$got"
+
 section "hanko tag — refuses dirty"
 # Fresh repo: HEAD is past the latest tag, so the idempotency short-circuit
 # does NOT fire; dirty check should reject.
