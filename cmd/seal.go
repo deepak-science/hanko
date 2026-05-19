@@ -25,18 +25,7 @@ var sealCmd = &cobra.Command{
 	GroupID: "stamp",
 	Long: `Bundles the release-time rite into one invocation:
 
-  1. Pre-flight: refuse if the worktree is dirty (so the release commit
-     contains only what hanko + the hooks produced).
-  2. Resolve version. Refuse if it's a pre-release (unless
-     seal.refuse-prerelease is false).
-  3. Run seal.pre-commit hooks in order, in the repo root. Each is a shell
-     command with template-expanded args ({semver}, {full}, {major}, etc.).
-     Non-zero exit aborts; worktree is left as-is.
-  4. Create a single commit with everything staged-or-modified, using
-     seal.commit-message as the message (also template-expanded).
-  5. Create an annotated tag matching what hanko tag would produce.
-  6. Push commit + tag atomically to seal.push-remote (default origin).
-
+Resolve version, stamp repo, commit changes and atomically tag-and-push.
 ` + "`--dry-run`" + ` walks the pipeline without mutating; prints what each step would do.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		switch sealBump {
