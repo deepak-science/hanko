@@ -112,6 +112,72 @@ commit "$repo" four
 got=$("$HANKO" --repo "$repo" version)
 assert_eq "feature branch is a pre-release on the tag base" "1.2.3-feature-foo.3" "$got"
 
+# commit_yaml writes .hanko.yaml + commits it so the worktree stays clean.
+commit_yaml() {
+  local dir=$1
+  local content=$2
+  printf "%s" "$content" >"$dir/.hanko.yaml"
+  git -C "$dir" add .hanko.yaml
+  git -C "$dir" commit -q -m "add hanko config"
+}
+
+section "hanko seal — dry-run"
+repoSeal=$(mkrepo)
+commit "$repoSeal" one
+commit_yaml "$repoSeal" 'seal:
+  push-remote: ""
+  pre-commit:
+    - "echo hook saw {semver}"
+'
+git -C "$repoSeal" tag v0.1.0
+commit "$repoSeal" two
+out=$("$HANKO" --repo "$repoSeal" seal --dry-run)
+assert_contains "dry-run shows version" "version:        0.1.1" "$out"
+assert_contains "dry-run shows tag" "tag name:       v0.1.1" "$out"
+assert_contains "dry-run shows commit message" "Release 0.1.1" "$out"
+assert_contains "dry-run expands hook template" "echo hook saw 0.1.1" "$out"
+# Confirm nothing was committed or tagged.
+tags_after=$(git -C "$repoSeal" tag -l | tr '\n' ',')
+assert_eq "dry-run created no tag" "v0.1.0," "$tags_after"
+
+section "hanko seal — happy path (local, no push)"
+out=$("$HANKO" --repo "$repoSeal" seal 2>&1)
+assert_contains "prints created tag" "v0.1.1" "$out"
+got_tag=$(git -C "$repoSeal" tag -l v0.1.1)
+assert_eq "tag v0.1.1 was created" "v0.1.1" "$got_tag"
+
+section "hanko seal — refuses dirty"
+repoDirty=$(mkrepo)
+commit "$repoDirty" one
+commit_yaml "$repoDirty" 'seal:
+  push-remote: ""
+'
+git -C "$repoDirty" tag v0.1.0
+commit "$repoDirty" two
+echo dirt >"$repoDirty/dirt"
+set +e
+out=$("$HANKO" --repo "$repoDirty" seal 2>&1)
+code=$?
+set -e
+assert_exit "exit code on dirty" 1 "$code"
+assert_contains "error mentions dirty" "dirty" "$out"
+
+section "hanko seal — refuses prerelease by default"
+repoPre=$(mkrepo)
+commit "$repoPre" one
+commit_yaml "$repoPre" 'seal:
+  push-remote: ""
+'
+git -C "$repoPre" tag v0.1.0
+git -C "$repoPre" checkout -q -b feature/x
+commit "$repoPre" two
+set +e
+out=$("$HANKO" --repo "$repoPre" seal 2>&1)
+code=$?
+set -e
+assert_exit "exit code on prerelease" 1 "$code"
+assert_contains "error mentions pre-release" "pre-release" "$out"
+
 section "hanko version --bump (manual override)"
 repoBump=$(mkrepo)
 commit "$repoBump" one

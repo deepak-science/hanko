@@ -200,11 +200,13 @@ adjacent scope.
 
 ### M5c — `hanko seal`
 
-- [ ] Implements the documented pipeline: pre-flight refusal (dirty / prerelease), stamp, run `pre-commit:` hooks, single commit, tag, push.
-- [ ] Template variables (`{semver}`, `{full}`, `{major}` etc.) expanded in `commit-message:` and hook command strings.
-- [ ] Pre-release refusal mirrors D-011; opt out via `seal.refuse-prerelease: false`.
-- [ ] `hanko seal --dry-run` walks the pipeline without mutating: shows the stamp diffs, lists the hooks that would run, prints the commit message and target tag.
-- [ ] Smoke + flow coverage: pyproject.toml + Chart.yaml in one repo; pre-commit hook that generates CHANGELOG.md via `git-cliff`; verify the resulting single commit contains all expected files.
+- [x] Implements the pipeline: pre-flight refusal (dirty / prerelease), run `pre-commit:` hooks, single commit, tag, push.
+  (Declarative stamping defers to M5b; users invoke per-format stampers as `pre-commit:` shell hooks for now.)
+- [x] Template variables (`{semver}`, `{full}`, `{major}`, `{minor}`, `{patch}`, `{major-minor}`, `{short-sha}`, `{is-prerelease}`, `{branch}`) expanded in `commit-message:` and hook command strings.
+- [x] Pre-release refusal mirrors D-011; opt out via `seal.refuse-prerelease: false`.
+- [x] `hanko seal --dry-run` walks the pipeline without mutating: shows the version, branch, target tag, commit message, and the template-expanded hook commands.
+- [x] Smoke coverage: dry-run, happy path (local, no push), refuses dirty, refuses pre-release by default.
+- [ ] Once M5b lands, seal will run the declarative `hanko stamp` pass before the `pre-commit:` hooks — no schema change, just one extra step in the pipeline.
 
 ### M5e — Bump strategies
 

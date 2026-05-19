@@ -53,9 +53,36 @@ type Config struct {
 	// Empty/unset → use Defaults' list.
 	Branches []BranchPolicy `yaml:"branches,omitempty"`
 
+	// Seal orchestration — see `hanko seal` (M5c).
+	Seal SealConfig `yaml:"seal,omitempty"`
+
 	// Source records the .hanko.yaml path that was loaded (empty if defaults).
 	// Not serialised back out.
 	Source string `yaml:"-"`
+}
+
+// SealConfig configures `hanko seal`: the release-time rite that bundles
+// hook execution, a single commit, an annotated tag, and a push.
+type SealConfig struct {
+	// PreCommit are shell commands run after the pre-flight checks pass but
+	// before the release commit is created. Each runs from the repo root.
+	// Failure aborts the seal, leaving the worktree as-is.
+	// `{semver}`, `{full}`, `{branch}` etc. expand to fields of the computed Version.
+	PreCommit []string `yaml:"pre-commit,omitempty"`
+
+	// CommitMessage is the commit body for the release commit. Templated
+	// like PreCommit. Default "Release {semver}".
+	CommitMessage string `yaml:"commit-message,omitempty"`
+
+	// PushRemote is the git remote to push commit + tag to.
+	// Pointer-string so an empty string in YAML (explicit disable) is
+	// distinguishable from absent (use default `origin`).
+	PushRemote *string `yaml:"push-remote,omitempty"`
+
+	// RefusePrerelease, when nil or true, makes seal refuse to operate on a
+	// pre-release version. Mirrors D-011 (`hanko tag` refuses prereleases).
+	// Set explicitly to false for repos that want to seal pre-releases.
+	RefusePrerelease *bool `yaml:"refuse-prerelease,omitempty"`
 }
 
 // BranchPolicy is one rule in the ordered list of branch matchers.
@@ -79,12 +106,19 @@ type BranchPolicy struct {
 // in config form, so a missing `.hanko.yaml` produces byte-identical output.
 func Defaults() *Config {
 	t := true
+	refuseTrue := true
+	defaultRemote := "origin"
 	return &Config{
 		TagPrefix:      `^v?(.+)$`,
 		DirtySuffix:    &t,
 		InitialVersion: "0.1.0",
 		OnShallow:      "refuse",
 		BumpStrategy:   "fixed",
+		Seal: SealConfig{
+			CommitMessage:    "Release {semver}",
+			PushRemote:       &defaultRemote,
+			RefusePrerelease: &refuseTrue,
+		},
 		TagMatch: []string{
 			`v[0-9]*.[0-9]*.[0-9]*`,
 			`[0-9]*.[0-9]*.[0-9]*`,
@@ -165,6 +199,18 @@ func mergeOnDefaults(user *Config) *Config {
 	}
 	if len(user.Branches) > 0 {
 		out.Branches = user.Branches
+	}
+	if len(user.Seal.PreCommit) > 0 {
+		out.Seal.PreCommit = user.Seal.PreCommit
+	}
+	if user.Seal.CommitMessage != "" {
+		out.Seal.CommitMessage = user.Seal.CommitMessage
+	}
+	if user.Seal.PushRemote != nil {
+		out.Seal.PushRemote = user.Seal.PushRemote
+	}
+	if user.Seal.RefusePrerelease != nil {
+		out.Seal.RefusePrerelease = user.Seal.RefusePrerelease
 	}
 	return out
 }

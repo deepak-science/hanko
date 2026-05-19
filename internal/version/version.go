@@ -111,6 +111,27 @@ func (v Version) AsEnv() map[string]string {
 	}
 }
 
+// Expand substitutes `{field}` placeholders in `s` with values from v.
+// Field set mirrors AsGHA — `{semver}`, `{full}`, `{major}`, `{minor}`,
+// `{patch}`, `{major-minor}`, `{short-sha}`, `{is-prerelease}`, `{branch}`.
+// Used by `hanko seal` for commit-message and pre-commit hook templates.
+// Unknown placeholders are left alone — surface to the user as-is so they
+// notice the typo rather than getting a silent empty string.
+func (v Version) Expand(s string) string {
+	repl := strings.NewReplacer(
+		"{semver}", v.SemVer,
+		"{full}", v.FullSemVer,
+		"{major}", strconv.Itoa(v.Major),
+		"{minor}", strconv.Itoa(v.Minor),
+		"{patch}", strconv.Itoa(v.Patch),
+		"{major-minor}", fmt.Sprintf("%d.%d", v.Major, v.Minor),
+		"{short-sha}", v.ShortSha,
+		"{is-prerelease}", fmt.Sprintf("%t", v.IsPreRelease),
+		"{branch}", sanitizeBranch(v.BranchName),
+	)
+	return repl.Replace(s)
+}
+
 // AsGHA returns the lowercase-dashed field set that cicd's resolve-version
 // composite action contract uses, ready to be appended to $GITHUB_OUTPUT.
 // Field names are deliberately frozen — see docs/design-decisions.md D-006.
