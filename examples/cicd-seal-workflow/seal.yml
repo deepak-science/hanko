@@ -1,0 +1,74 @@
+# Example workflow_dispatch workflow that performs a hanko release.
+#
+# The "seal" half of a release split into two workflows:
+#   - This workflow (manual): `hanko seal` — stamp, hooks, commit, tag, push.
+#   - A companion tag-triggered workflow handles what happens *after* the
+#     tag arrives. Hanko's own `.github/workflows/release.yml` is one.
+#
+# Prerequisites in the consumer repo:
+#   - `.hanko.yaml` with `stamp-targets:`. See hanko's own `.hanko.yaml`.
+#   - `GITHUB_TOKEN` allowed to push to the release branch — or pass a
+#     PAT / App token at checkout if branch protection blocks it.
+
+name: Seal release
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: "Walk the seal pipeline without mutating anything."
+        type: boolean
+        default: false
+      bump:
+        description: "Force a bump direction (patch/minor/major/none). Blank uses the configured strategy."
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: seal-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  seal:
+    runs-on: ubuntu-latest
+    env:
+      HANKO_VERSION: v0.2.1
+      HANKO_REPO: dmallubhotla/hanko
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+          # token: ${{ secrets.RELEASE_TOKEN }}
+
+      - name: Install hanko
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/hanko-bin"
+          gh release download "$HANKO_VERSION" \
+            --repo "$HANKO_REPO" \
+            --pattern 'hanko-linux-amd64' \
+            --output "$RUNNER_TEMP/hanko-bin/hanko"
+          chmod +x "$RUNNER_TEMP/hanko-bin/hanko"
+          echo "$RUNNER_TEMP/hanko-bin" >> "$GITHUB_PATH"
+
+      - name: Configure git identity
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Seal
+        env:
+          DRY_RUN: ${{ inputs.dry-run }}
+          BUMP: ${{ inputs.bump }}
+        run: |
+          set -euo pipefail
+          args=()
+          if [[ "$DRY_RUN" == "true" ]]; then args+=(--dry-run); fi
+          if [[ -n "$BUMP" ]]; then args+=(--bump "$BUMP"); fi
+          hanko seal "${args[@]}"

@@ -13,5 +13,7 @@ Update these as the binary acquires features — when hanko reaches v1, this fol
   Many migrations in `migrations/` skip it in favour of inline `hanko` calls — see [D-010](../docs/design-decisions.md#d-010).
 - [`cicd-reusable-workflow/`](./cicd-reusable-workflow/) — thin reusable-workflow wrapper that replaces `cicd/.github/workflows/gitversion.yml`.
   Same caveat: many migrations don't need this layer.
+- [`cicd-seal-workflow/`](./cicd-seal-workflow/) — manual (`workflow_dispatch`) workflow that runs `hanko seal` to cut a release: stamp, commit, tag, push.
+  Pair with a tag-triggered workflow (like this repo's own `release.yml`) that handles the post-tag publish step.
 - [`local-usage.md`](./local-usage.md) — how a developer would invoke hanko on their workstation.
   Read-only by default, no surprises.
