@@ -95,7 +95,7 @@ For more, see [examples/local-usage.md](./examples/local-usage.md) and the migra
 
 | Command                              | Purpose                                                                |
 | ------------------------------------ | ---------------------------------------------------------------------- |
-| `hanko version`                      | Compute the current version. Formats: `semver` / `full` / `json` / `env` / `gha`. `--bump <direction>` forces patch/minor/major for one invocation. |
+| `hanko version`                      | Compute the current version. `--format <semver\|full\|json\|env\|gha>`. `--bump <patch\|minor\|major\|none>` short-circuits the bump strategy for one invocation. |
 | `hanko tag [--push]`                 | Create (and optionally push) an annotated git tag for that version     |
 | `hanko seal [--dry-run]`             | Run the release rite: stamp targets → run hooks → commit → tag → push  |
 | `hanko stamp` (no args)              | Apply every declared `stamp-targets:` to the computed version          |
@@ -117,19 +117,26 @@ A repo with no config file is treated as if it had this:
 tag-prefix: "^v?(.+)$"           # regex applied to existing tags to extract a semver; write-side follows the repo's existing tag shape
 dirty-suffix: true               # dirty worktree appends `.dirty` to build metadata
 initial-version: "0.1.0"         # base used when no semver tag is reachable
-on-shallow: refuse               # exit non-zero on shallow clones — see D-004
-bump-strategy: conventional-commits  # parse commit subjects for bump direction; falls back to per-branch `increment` when no signal. `fixed` skips the parser entirely.
+on-shallow: refuse               # refuse | warn | ignore — see D-004
+bump-strategy: conventional-commits  # conventional-commits | fixed. conventional-commits parses commit subjects (`feat:` / `fix:` / `feat!:`) for bump direction and falls back to the branch's `increment` when no commit contributes a signal; fixed skips the parser entirely.
 
 tag-match:                       # globs that decide which tags are eligible for discovery (`git describe --match`)
   - "v[0-9]*.[0-9]*.[0-9]*"
   - "[0-9]*.[0-9]*.[0-9]*"
 
 branches:                        # evaluated in order, first regex match wins
+  # `increment` (patch | minor | major | none) names the direction of a one-time
+  # bump past the latest tag (D-013). `label` controls the pre-release suffix:
+  # empty = release-shaped, non-empty = pre-release. Both fields accept
+  # `{branch}` and `{N}` (Nth regex capture group) template variables.
+  # Each branch may also set `bump-strategy: fixed | conventional-commits` to
+  # override the top-level strategy (e.g. "mainline reads commits, hotfix always
+  # bumps patch").
   - name: mainline
     regex: ^(main|master)$
     is-mainline: true
-    increment: patch             # past the tag → patch += 1 (one-time, see D-013)
-    label: ""                    # no pre-release suffix → release-shaped
+    increment: patch
+    label: ""
   - name: release
     regex: ^release/(\d+)\.(\d+)$
     is-mainline: true
@@ -139,7 +146,7 @@ branches:                        # evaluated in order, first regex match wins
     minor-from: 2
   - name: hotfix
     regex: ^hotfix/.*$
-    increment: patch             # one-time +1, with prerelease counter
+    increment: patch
     label: hotfix                # → 1.2.4-hotfix.N
   - name: feature
     regex: .*

@@ -183,10 +183,9 @@ adjacent scope.
 
 ### M5a — `.hanko.yaml` loader
 
-- [ ] Parse the version-computation sections (existing sketch: `tag-prefix`, `mode`, `dirty-suffix`, `initial-version`, `on-shallow`, `branches`).
-- [ ] Wire those into the existing `version.Compute` path; today's hard-coded defaults stay as the no-config fallback.
-- [ ] Schema validation at startup; clear error pointing at the offending key.
-- [ ] JSON Schema (generated from the Go struct) for editor completion.
+- [x] Parse the version-computation sections (existing sketch: `tag-prefix`, `mode`, `dirty-suffix`, `initial-version`, `on-shallow`, `branches`).
+- [x] Wire those into the existing `version.Compute` path; today's hard-coded defaults stay as the no-config fallback.
+- [x] Schema validation at startup; clear error pointing at the offending key.
 
 ### M5b — `stamp-targets:` + generic stamp engine
 
@@ -306,8 +305,6 @@ These are tempting but should wait:
 
 ## Open questions (capture as we go)
 
-- Do we want a JSON Schema for `.hanko.yaml`?
-  Probably yes by M3.
 - Should `hanko stamp docker` build the image, or only label an existing one?
   Leaning: only label, build is someone else's job.
 - Behaviour on the very first commit (no parent, no tags) — return `0.1.0-rc.1`?

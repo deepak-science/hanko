@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -121,6 +122,147 @@ func TestLoad_malformedYAMLErrors(t *testing.T) {
 	}
 	if _, err := Load(dir); err == nil {
 		t.Error("expected parse error, got nil")
+	}
+}
+
+func TestDefaults_passValidation(t *testing.T) {
+	// Defaults() are hard-coded; if validate() rejects them we've drifted
+	// between the validator and the defaults table. Important invariant.
+	d := Defaults()
+	if err := validate(d); err != nil {
+		t.Errorf("Defaults() failed validation: %v", err)
+	}
+}
+
+func TestLoad_rejectsUnknownKey(t *testing.T) {
+	dir := t.TempDir()
+	yaml := "tag-prefex: \"^v?(.+)$\"\n"
+	if err := os.WriteFile(filepath.Join(dir, ConfigFileName), []byte(yaml), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	_, err := Load(dir)
+	if err == nil {
+		t.Fatal("expected error for unknown key, got nil")
+	}
+	if !strings.Contains(err.Error(), "tag-prefex") {
+		t.Errorf("error should mention the offending key, got: %v", err)
+	}
+}
+
+func TestLoad_validationErrors(t *testing.T) {
+	cases := []struct {
+		name      string
+		yaml      string
+		wantInErr string
+	}{
+		{
+			name:      "invalid on-shallow",
+			yaml:      "on-shallow: maybe\n",
+			wantInErr: "on-shallow",
+		},
+		{
+			name:      "invalid bump-strategy",
+			yaml:      "bump-strategy: vibes\n",
+			wantInErr: "bump-strategy",
+		},
+		{
+			name:      "invalid tag-prefix regex",
+			yaml:      `tag-prefix: "([unclosed"` + "\n",
+			wantInErr: "tag-prefix",
+		},
+		{
+			name: "branch missing regex",
+			yaml: `branches:
+  - name: x
+    increment: patch
+`,
+			wantInErr: "branches[0].regex",
+		},
+		{
+			name: "branch invalid regex",
+			yaml: `branches:
+  - name: x
+    regex: "([unclosed"
+    increment: patch
+`,
+			wantInErr: "branches[0].regex",
+		},
+		{
+			name: "branch invalid increment",
+			yaml: `branches:
+  - name: x
+    regex: ".*"
+    increment: epic
+`,
+			wantInErr: "branches[0].increment",
+		},
+		{
+			name: "branch invalid bump-strategy",
+			yaml: `branches:
+  - name: x
+    regex: ".*"
+    bump-strategy: vibes
+`,
+			wantInErr: "branches[0].bump-strategy",
+		},
+		{
+			name: "stamp-target missing path",
+			yaml: `stamp-targets:
+  - format: toml
+    key: version
+`,
+			wantInErr: "stamp-targets[0].path",
+		},
+		{
+			name: "stamp-target missing format",
+			yaml: `stamp-targets:
+  - path: Cargo.toml
+    key: package.version
+`,
+			wantInErr: "stamp-targets[0].format",
+		},
+		{
+			name: "stamp-target invalid format",
+			yaml: `stamp-targets:
+  - path: foo.ini
+    format: ini
+    key: version
+`,
+			wantInErr: "stamp-targets[0].format",
+		},
+		{
+			name: "stamp-target both key and keys",
+			yaml: `stamp-targets:
+  - path: Chart.yaml
+    format: yaml
+    key: version
+    keys: [version, appVersion]
+`,
+			wantInErr: "stamp-targets[0]",
+		},
+		{
+			name: "stamp-target neither key nor keys",
+			yaml: `stamp-targets:
+  - path: Chart.yaml
+    format: yaml
+`,
+			wantInErr: "stamp-targets[0]",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, ConfigFileName), []byte(tc.yaml), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			_, err := Load(dir)
+			if err == nil {
+				t.Fatalf("expected validation error, got nil")
+			}
+			if !strings.Contains(err.Error(), tc.wantInErr) {
+				t.Errorf("error %q should contain %q", err.Error(), tc.wantInErr)
+			}
+		})
 	}
 }
 

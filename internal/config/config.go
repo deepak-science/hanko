@@ -11,9 +11,13 @@
 package config
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 
 	"gopkg.in/yaml.v3"
 )
@@ -192,12 +196,89 @@ func Load(startDir string) (*Config, error) {
 		return nil, fmt.Errorf("read %s: %w", path, err)
 	}
 	var user Config
-	if err := yaml.Unmarshal(data, &user); err != nil {
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	if err := dec.Decode(&user); err != nil && !errors.Is(err, io.EOF) {
 		return nil, fmt.Errorf("parse %s: %w", path, err)
+	}
+	if err := validate(&user); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	out := mergeOnDefaults(&user)
 	out.Source = path
 	return out, nil
+}
+
+// validate checks user-supplied fields for value-level errors that the YAML
+// parser can't catch on its own (enum values, regex syntax, mutually-exclusive
+// keys). It runs against the user's raw input — defaults are hard-coded and
+// trusted — so error messages point at keys the user actually wrote.
+func validate(c *Config) error {
+	if c.OnShallow != "" {
+		switch c.OnShallow {
+		case "refuse", "warn", "ignore":
+		default:
+			return fmt.Errorf("on-shallow: %q is not one of refuse|warn|ignore", c.OnShallow)
+		}
+	}
+	if c.BumpStrategy != "" {
+		if err := validateBumpStrategy(c.BumpStrategy); err != nil {
+			return fmt.Errorf("bump-strategy: %w", err)
+		}
+	}
+	if c.TagPrefix != "" {
+		if _, err := regexp.Compile(c.TagPrefix); err != nil {
+			return fmt.Errorf("tag-prefix: %q: %w", c.TagPrefix, err)
+		}
+	}
+	for i, b := range c.Branches {
+		if b.Regex == "" {
+			return fmt.Errorf("branches[%d].regex: required", i)
+		}
+		if _, err := regexp.Compile(b.Regex); err != nil {
+			return fmt.Errorf("branches[%d].regex: %q: %w", i, b.Regex, err)
+		}
+		if b.Increment != "" {
+			switch b.Increment {
+			case "patch", "minor", "major", "none":
+			default:
+				return fmt.Errorf("branches[%d].increment: %q is not one of patch|minor|major|none", i, b.Increment)
+			}
+		}
+		if b.BumpStrategy != "" {
+			if err := validateBumpStrategy(b.BumpStrategy); err != nil {
+				return fmt.Errorf("branches[%d].bump-strategy: %w", i, err)
+			}
+		}
+	}
+	for i, s := range c.StampTargets {
+		if s.Path == "" {
+			return fmt.Errorf("stamp-targets[%d].path: required", i)
+		}
+		switch s.Format {
+		case "":
+			return fmt.Errorf("stamp-targets[%d].format: required (one of toml|yaml|json|nix|plain)", i)
+		case "toml", "yaml", "json", "nix", "plain":
+		default:
+			return fmt.Errorf("stamp-targets[%d].format: %q is not one of toml|yaml|json|nix|plain", i, s.Format)
+		}
+		if s.Key != "" && len(s.Keys) > 0 {
+			return fmt.Errorf("stamp-targets[%d]: set either key: or keys:, not both", i)
+		}
+		if s.Key == "" && len(s.Keys) == 0 {
+			return fmt.Errorf("stamp-targets[%d]: must set key: or keys:", i)
+		}
+	}
+	return nil
+}
+
+func validateBumpStrategy(s string) error {
+	switch s {
+	case "fixed", "conventional-commits":
+		return nil
+	default:
+		return fmt.Errorf("%q is not one of fixed|conventional-commits", s)
+	}
 }
 
 // findConfigFile walks from `start` up to filesystem root looking for

@@ -296,8 +296,6 @@ hanko taking sides.
 
 - **Should we ship presets** (`preset: strict-ci`, `preset: gitversion-compat`) that expand into a full config?
   Reduces boilerplate, costs explainability.
-- **JSON Schema** for editor completion.
-  Probably yes; generate from a single Go struct so the loader and schema can't drift.
 - **Validation timing.**
   Lint at startup vs lazy-validate on first branch-match?
   Startup wins for fail-fast; pay the parse cost regardless.
