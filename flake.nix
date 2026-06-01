@@ -45,16 +45,38 @@
       # though hanko currently only exposes one derivation — matches the D-015
       # shared-`let` pattern recommended for consumers.
       version = "0.3.0";
-      commonLdflags = [
-        "-s"
-        "-w"
-        "-X"
-        "main.version=${version}"
-        "-X"
-        "main.commit=${self.rev or self.dirtyRev or "unknown"}"
-        "-X"
-        "main.date=${self.lastModifiedDate or "unknown"}"
-      ];
+      # Pure-nix equivalent of `hanko version go-ldflags`. Exposed as
+      # `hanko.lib.mkGoLdflags` so consumers can wire ldflags into their own
+      # buildGoApplication / buildGoModule without shelling out to hanko at
+      # build time (the build sandbox lacks git, and depending on a built
+      # hanko to build hanko is circular).
+      hankoLib = {
+        mkGoLdflags =
+          {
+            self,
+            version,
+            package ? "main",
+            strip ? true,
+          }:
+          (
+            if strip then
+              [
+                "-s"
+                "-w"
+              ]
+            else
+              [ ]
+          )
+          ++ [
+            "-X"
+            "${package}.version=${version}"
+            "-X"
+            "${package}.commit=${self.rev or self.dirtyRev or "unknown"}"
+            "-X"
+            "${package}.date=${self.lastModifiedDate or "unknown"}"
+          ];
+      };
+      commonLdflags = hankoLib.mkGoLdflags { inherit self version; };
       hankoOverlay = final: _prev: {
         hanko = final.buildGoApplication {
           pname = "hanko";
@@ -74,6 +96,7 @@
       };
     in
     {
+      lib = hankoLib;
 
       overlays.default = nixpkgs.lib.composeManyExtensions [
         gomod2nix.overlays.default
