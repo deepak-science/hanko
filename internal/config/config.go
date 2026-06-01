@@ -19,6 +19,7 @@ import (
 	"path/filepath"
 	"regexp"
 
+	"github.com/dmallubhotla/hanko/internal/stamper"
 	"gopkg.in/yaml.v3"
 )
 
@@ -257,15 +258,15 @@ func validate(c *Config) error {
 		}
 		switch s.Format {
 		case "":
-			return fmt.Errorf("stamp-targets[%d].format: required (one of toml|yaml|json|nix|plain)", i)
-		case "toml", "yaml", "json", "nix", "plain":
+			return fmt.Errorf("stamp-targets[%d].format: required (one of toml|yaml|yml|json|nix|helm|plain|text)", i)
+		case "toml", "yaml", "yml", "json", "nix", "helm", "plain", "text":
 		default:
-			return fmt.Errorf("stamp-targets[%d].format: %q is not one of toml|yaml|json|nix|plain", i, s.Format)
+			return fmt.Errorf("stamp-targets[%d].format: %q is not one of toml|yaml|yml|json|nix|helm|plain|text", i, s.Format)
 		}
 		if s.Key != "" && len(s.Keys) > 0 {
 			return fmt.Errorf("stamp-targets[%d]: set either key: or keys:, not both", i)
 		}
-		if s.Key == "" && len(s.Keys) == 0 {
+		if !stamper.FormatHasFixedKeys(s.Format) && s.Key == "" && len(s.Keys) == 0 {
 			return fmt.Errorf("stamp-targets[%d]: must set key: or keys:, neither was set", i)
 		}
 	}

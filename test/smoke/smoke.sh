@@ -707,20 +707,23 @@ set -e
 assert_exit "exit code" 1 "$code"
 assert_contains "error mentions conflict" "does not point at HEAD" "$out"
 
-section "hanko stamp go-ldflags"
+section "hanko version go-ldflags"
 repo=$(mkrepo)
 commit "$repo" one
 git -C "$repo" tag v1.0.0
 commit "$repo" two
-out=$("$HANKO" --repo "$repo" stamp go-ldflags)
+out=$("$HANKO" --repo "$repo" version go-ldflags)
 assert_contains "has -X main.version" "-X main.version=1.0.1" "$out"
 assert_contains "has -X main.commit" "-X main.commit=" "$out"
 assert_contains "has -X main.date" "-X main.date=" "$out"
 
-out=$("$HANKO" --repo "$repo" stamp go-ldflags --package example.com/foo)
+out=$("$HANKO" --repo "$repo" version go-ldflags --package example.com/foo)
 assert_contains "honours --package" "-X example.com/foo.version=1.0.1" "$out"
 
-section "hanko stamp nix"
+section "hanko stamp nix — filters nix targets from .hanko.yaml"
+# `stamp <format>` is a positional filter on stamp-targets; `stamp nix` means
+# "apply only the format: nix targets". The standalone `stamp nix <file>`
+# one-off mode is gone — config is required.
 nixrepo=$(mkrepo)
 cat >"$nixrepo/flake.nix" <<'EOF'
 {
@@ -733,7 +736,13 @@ cat >"$nixrepo/flake.nix" <<'EOF'
   };
 }
 EOF
-git -C "$nixrepo" add flake.nix
+cat >"$nixrepo/.hanko.yaml" <<'EOF'
+stamp-targets:
+  - path: flake.nix
+    format: nix
+    key: version
+EOF
+git -C "$nixrepo" add flake.nix .hanko.yaml
 git -C "$nixrepo" commit -q -m one
 git -C "$nixrepo" tag v1.2.3
 commit "$nixrepo" two
@@ -748,8 +757,8 @@ assert_contains "dry-run announces change" "0.0.1 → 1.2.4" "$out"
 got=$(grep 'version = ' "$nixrepo/flake.nix")
 assert_contains "dry-run did not write" 'version = "0.0.1";' "$got"
 
-section "hanko stamp docker tags — non-prerelease on main"
-out=$("$HANKO" --repo "$repo" stamp docker tags ghcr.io/example/demo)
+section "hanko version docker tags — non-prerelease on main"
+out=$("$HANKO" --repo "$repo" version docker tags ghcr.io/example/demo)
 expected="ghcr.io/example/demo:1.0.1
 ghcr.io/example/demo:1.0
 ghcr.io/example/demo:1
@@ -757,61 +766,96 @@ ghcr.io/example/demo:latest
 ghcr.io/example/demo:main-$(git -C "$repo" rev-parse --short HEAD)"
 assert_eq "full fan-out on mainline" "$expected" "$out"
 
-out=$("$HANKO" --repo "$repo" stamp docker tags ghcr.io/example/demo --latest-on-default-branch=false --branch-sha-tag=false)
+out=$("$HANKO" --repo "$repo" version docker tags ghcr.io/example/demo --latest-on-default-branch=false --branch-sha-tag=false)
 expected="ghcr.io/example/demo:1.0.1
 ghcr.io/example/demo:1.0
 ghcr.io/example/demo:1"
 assert_eq "knobs turn off latest and branch-sha" "$expected" "$out"
 
-section "hanko stamp docker tags — pre-release"
+section "hanko version docker tags — pre-release"
 # feature/bar branches off main HEAD (which already has 1 commit past v1.0.0)
 # and adds one more, so git describe sees 2 commits since v1.0.0 — the
 # pre-release counter reflects that, not "commits on this branch".
 git -C "$repo" checkout -q -b feature/bar
 commit "$repo" three
 short=$(git -C "$repo" rev-parse --short HEAD)
-out=$("$HANKO" --repo "$repo" stamp docker tags ghcr.io/example/demo)
+out=$("$HANKO" --repo "$repo" version docker tags ghcr.io/example/demo)
 expected="ghcr.io/example/demo:1.0.0-feature-bar.2
 ghcr.io/example/demo:feature-bar-$short"
 assert_eq "prerelease emits only full + branch-sha" "$expected" "$out"
 
-section "hanko stamp docker labels — args mode"
+section "hanko version docker labels"
 git -C "$repo" checkout -q main
-out=$("$HANKO" --repo "$repo" stamp docker labels --source https://example.com/foo --title demo)
+out=$("$HANKO" --repo "$repo" version docker labels --source https://example.com/foo --title demo)
 assert_contains "version label" "--label org.opencontainers.image.version=1.0.1" "$out"
 assert_contains "revision label" "--label org.opencontainers.image.revision=" "$out"
 assert_contains "source label" "--label org.opencontainers.image.source=https://example.com/foo" "$out"
 assert_contains "title label" "--label org.opencontainers.image.title=demo" "$out"
 
-section "hanko stamp docker labels — file mode"
-labelfile=$(mktemp)
-"$HANKO" --repo "$repo" stamp docker labels --output file --file "$labelfile"
-content=$(<"$labelfile")
-assert_contains "file contains version line" "org.opencontainers.image.version=1.0.1" "$content"
-
-section "hanko stamp helm"
-chart=$(mktemp -d)
-mkdir -p "$chart/templates"
-cat >"$chart/Chart.yaml" <<'YAML'
+section "hanko stamp helm — filters helm targets from .hanko.yaml"
+# `format: helm` is a stamper engine (fixed-keys: version + appVersion). The
+# old standalone `stamp helm <chart-dir>` mode is gone — declare a target.
+helmrepo=$(mkrepo)
+mkdir -p "$helmrepo/charts/demo/templates"
+cat >"$helmrepo/charts/demo/Chart.yaml" <<'YAML'
 apiVersion: v2
 name: demo
 version: 0.0.0
 appVersion: "0.0.0"  # trailing comment
 YAML
-# Repo for version computation:
-helmrepo=$(mkrepo)
-commit "$helmrepo" one
+cat >"$helmrepo/.hanko.yaml" <<'EOF'
+stamp-targets:
+  - path: charts/demo/Chart.yaml
+    format: helm
+EOF
+git -C "$helmrepo" add charts .hanko.yaml
+git -C "$helmrepo" commit -q -m one
 git -C "$helmrepo" tag v2.0.0
 commit "$helmrepo" two
-out=$("$HANKO" --repo "$helmrepo" stamp helm "$chart" --dry-run)
+
+out=$("$HANKO" --repo "$helmrepo" stamp helm --dry-run)
 assert_contains "dry-run mentions version" "version: 0.0.0 → 2.0.1" "$out"
-# File should not have changed on dry-run:
-assert_contains "dry-run does not write" "version: 0.0.0" "$(<"$chart/Chart.yaml")"
-"$HANKO" --repo "$helmrepo" stamp helm "$chart" >/dev/null
-after=$(<"$chart/Chart.yaml")
+assert_contains "dry-run does not write" "version: 0.0.0" "$(<"$helmrepo/charts/demo/Chart.yaml")"
+"$HANKO" --repo "$helmrepo" stamp helm >/dev/null
+after=$(<"$helmrepo/charts/demo/Chart.yaml")
 assert_contains "applies version" "version: 2.0.1" "$after"
 assert_contains "applies appVersion (quoted)" 'appVersion: "2.0.1"' "$after"
 assert_contains "preserves trailing comment" "# trailing comment" "$after"
+
+section "hanko stamp <format> — filter only touches matching targets"
+# Two targets of different formats. `stamp <one>` must only mutate that one.
+# `stamp <unknown>` must error rather than silently no-op.
+filtrepo=$(mkrepo)
+echo "0.0.1" >"$filtrepo/VERSION"
+cat >"$filtrepo/package.json" <<'EOF'
+{
+  "name": "demo",
+  "version": "0.0.1"
+}
+EOF
+cat >"$filtrepo/.hanko.yaml" <<'EOF'
+stamp-targets:
+  - path: VERSION
+    format: plain
+  - path: package.json
+    format: json
+    key: version
+EOF
+git -C "$filtrepo" add .
+git -C "$filtrepo" commit -q -m initial
+git -C "$filtrepo" tag v1.0.0
+commit "$filtrepo" two
+
+"$HANKO" --repo "$filtrepo" stamp plain >/dev/null
+assert_eq "plain filter wrote VERSION" "1.0.1" "$(<"$filtrepo/VERSION")"
+assert_contains "plain filter left package.json untouched" '"version": "0.0.1"' "$(<"$filtrepo/package.json")"
+
+set +e
+out=$("$HANKO" --repo "$filtrepo" stamp xml 2>&1)
+code=$?
+set -e
+assert_exit "unknown format exits non-zero" 1 "$code"
+assert_contains "unknown format error names the filter" "xml" "$out"
 
 # ── summary ────────────────────────────────────────────────────────────────
 

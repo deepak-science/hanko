@@ -15,40 +15,66 @@ import (
 var stampDryRun bool
 
 var stampCmd = &cobra.Command{
-	Use:     "stamp",
-	Short:   "Stamp the computed version onto declared targets (or use a subcommand for one-offs)",
+	Use:     "stamp [format]",
+	Short:   "Apply declared stamp-targets, optionally filtered by format",
 	GroupID: "stamp",
-	Long: `With no subcommand, reads ` + "`stamp-targets:`" + ` from ` + "`.hanko.yaml`" + ` and updates each declared file to the current computed version.
+	Long: `Reads ` + "`stamp-targets:`" + ` from ` + "`.hanko.yaml`" + ` and updates each declared file to the current computed version.
 
-Subcommands (` + "`go-ldflags`" + `, ` + "`docker tags`" + `, ` + "`docker labels`" + `, ` + "`helm`" + `, ` + "`nix`" + `) remain for one-off use without config.
+With a positional ` + "`[format]`" + ` argument, only targets whose ` + "`format:`" + ` matches are stamped — useful as a build-step that touches only one kind of file (` + "`hanko stamp helm`" + `, ` + "`hanko stamp nix`" + `, etc.). If no targets match the filter, hanko errors rather than silently no-op.
+
+For build-time emitters that print to stdout (Go ldflags, container tags, OCI labels), see ` + "`hanko version go-ldflags`" + ` and ` + "`hanko version docker tags|labels`" + `.
 
 ` + "`--dry-run`" + ` prints per-target before/after summaries without writing.`,
+	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// Only the no-args call falls into this RunE — subcommands have their own.
-		return runStampTargets()
+		filter := ""
+		if len(args) == 1 {
+			filter = args[0]
+		}
+		return runStampTargets(filter)
 	},
 }
 
-func runStampTargets() error {
+func runStampTargets(filter string) error {
 	cfg, err := config.Load(repoPath)
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
 	if len(cfg.StampTargets) == 0 {
-		return fmt.Errorf("no `stamp-targets:` declared in %s — use a `hanko stamp <format>` subcommand for one-off stamping, or add targets to .hanko.yaml", configSourceOrDefault(cfg))
+		return fmt.Errorf("no `stamp-targets:` declared in %s — add targets to .hanko.yaml", configSourceOrDefault(cfg))
+	}
+	targets := cfg.StampTargets
+	if filter != "" {
+		targets = filterTargetsByFormat(cfg.StampTargets, filter)
+		if len(targets) == 0 {
+			return fmt.Errorf("no `stamp-targets:` with format %q in %s", filter, configSourceOrDefault(cfg))
+		}
 	}
 	v, err := resolveVersion("")
 	if err != nil {
 		return err
 	}
-	return applyStampTargets(cfg.StampTargets, v, stampDryRun)
+	return applyStampTargets(targets, v, stampDryRun)
+}
+
+// filterTargetsByFormat returns the subset of targets whose Format matches
+// the given filter exactly. No alias collapsing (e.g. yaml/yml are distinct
+// here, matching whatever the user wrote in `.hanko.yaml`).
+func filterTargetsByFormat(targets []config.StampTarget, format string) []config.StampTarget {
+	var out []config.StampTarget
+	for _, t := range targets {
+		if t.Format == format {
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 func applyStampTargets(targets []config.StampTarget, v version.Version, dryRun bool) error {
 	for _, t := range targets {
 		keys := t.EffectiveKeys()
-		// "plain" format ignores keys; everything else requires at least one.
-		if t.Format != "plain" && t.Format != "text" && len(keys) == 0 {
+		// Some engines (plain, helm) determine their own keys.
+		if !stamper.FormatHasFixedKeys(t.Format) && len(keys) == 0 {
 			return fmt.Errorf("stamp-target %q (%s): `key` or `keys` required", t.Path, t.Format)
 		}
 		abs := t.Path

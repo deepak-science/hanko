@@ -329,6 +329,15 @@ version: 0.0.0
 appVersion: "0.0.0"  # bumped by hanko in CI
 EOF
 
+# Declare the helm chart as a stamp-target so `hanko stamp helm` (filter form)
+# can find it. Build-time emitters (ldflags, docker tags/labels) don't need
+# config — they stay stdout-shaped under `hanko version`.
+cat >"$repo/.hanko.yaml" <<'EOF'
+stamp-targets:
+  - path: charts/demo/Chart.yaml
+    format: helm
+EOF
+
 git -C "$repo" add -A
 GIT_AUTHOR_DATE="2026-01-01T00:00:00Z" GIT_COMMITTER_DATE="2026-01-01T00:00:00Z" git -C "$repo" commit -q -m initial
 annotated_tag "$repo" v1.0.0
@@ -343,7 +352,7 @@ expected_semver="1.1.1"
 assert_eq "version on this multi-tag repo" "$expected_semver" "$("$HANKO" --repo "$repo" version)"
 
 # 1. Go ldflags — build the binary and check it embeds the right strings.
-ldflags=$("$HANKO" --repo "$repo" stamp go-ldflags)
+ldflags=$("$HANKO" --repo "$repo" version go-ldflags)
 (cd "$repo" && go build -ldflags "$ldflags" -o "$repo/demo" .)
 embedded=$("$repo/demo")
 assert_contains "embedded version=$expected_semver" "version=$expected_semver" "$embedded"
@@ -351,7 +360,7 @@ assert_contains "embedded commit=full sha" "commit=$(git -C "$repo" rev-parse HE
 assert_contains "embedded date=commit date" "date=2026-01-01T00:00:00" "$embedded"
 
 # 2. Docker tags — full fan-out on mainline.
-out=$("$HANKO" --repo "$repo" stamp docker tags ghcr.io/example/demo)
+out=$("$HANKO" --repo "$repo" version docker tags ghcr.io/example/demo)
 short=$(git -C "$repo" rev-parse --short HEAD)
 expected_tags="ghcr.io/example/demo:$expected_semver
 ghcr.io/example/demo:1.1
@@ -361,12 +370,12 @@ ghcr.io/example/demo:main-$short"
 assert_eq "docker tag fan-out on mainline" "$expected_tags" "$out"
 
 # 3. Docker labels — args mode.
-out=$("$HANKO" --repo "$repo" stamp docker labels --source https://example.com/demo --title demo)
+out=$("$HANKO" --repo "$repo" version docker labels --source https://example.com/demo --title demo)
 assert_contains "version label" "--label org.opencontainers.image.version=$expected_semver" "$out"
 assert_contains "created label is commit date" "--label org.opencontainers.image.created=2026-01-01T00:00:00" "$out"
 
-# 4. Helm — edit the chart in place.
-"$HANKO" --repo "$repo" stamp helm "$repo/charts/demo" >/dev/null
+# 4. Helm — apply via the stamp filter (helm engine + stamp-targets entry).
+"$HANKO" --repo "$repo" stamp helm >/dev/null
 chart_after=$(<"$repo/charts/demo/Chart.yaml")
 assert_contains "Chart.yaml has new version" "version: $expected_semver" "$chart_after"
 assert_contains "Chart.yaml has quoted appVersion" "appVersion: \"$expected_semver\"" "$chart_after"

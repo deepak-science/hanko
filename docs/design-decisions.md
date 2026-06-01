@@ -36,7 +36,7 @@ Add to this as you go; revisit collectively rather than litigating each one in i
   CLI behavior stays independent of environment.
 
 - **D-008 — Tag fan-out lives in hanko.**
-  `stamp docker tags` owns the `<full> / <major>.<minor> / <major> / :latest` policy.
+  `version docker tags` owns the `<full> / <major>.<minor> / <major> / :latest` policy.
   Resolved in M3; cicd's `compute-image-tags` composite becomes deletable.
 
 - **D-009 — Hardcode main/master as the only mainline branches. No `--default-branch` flag.**
@@ -94,7 +94,7 @@ Add to this as you go; revisit collectively rather than litigating each one in i
   The new default flips the value-add for users who already write `feat:` / `fix:` / `feat!:` commits — they don't need to set anything in `.hanko.yaml`.
   Opt out per repo with `bump-strategy: fixed`, or per branch with `branches[].bump-strategy: fixed` (useful for hotfix branches that should always bump patch regardless of commit-message hints).
 
-- **D-015 — `stamp nix` rewrites every `version = "X";` line sharing the current value.**
+- **D-015 — the `nix` engine rewrites every `version = "X";` line sharing the current value.**
   Surfaced by kestrel (first real consumer): its `flake.nix` exposes both `kest` and `kestci` derivations, each a `buildGoApplication` with its own `version = "..."`.
   First-match-wins silently left the second derivation on the previous release's version.
   **Rule chosen**:
@@ -114,16 +114,23 @@ Add to this as you go; revisit collectively rather than litigating each one in i
 
 ## M3 implicit decisions worth flagging
 
+- **D-018 — Build-time emitters live under `version`; release-time edits live under `stamp`.**
+  `version go-ldflags`, `version docker tags`, `version docker labels` are pure functions of the computed version that print to stdout for splicing into build commands.
+  `stamp` is the file-mutating verb, driven exclusively by `stamp-targets:` in `.hanko.yaml`; `stamp <format>` is a positional filter on those targets.
+  No config layer for the emitters — flags-with-defaults only, so build scripts say at the call site exactly what they inject.
+  Removed in this split: `stamp go-ldflags`, `stamp docker tags`, `stamp docker labels` (now `version …`), the standalone `stamp helm <chart-dir>` and `stamp nix [flake-file]` modes (now require a `stamp-targets:` entry), and `stamp docker labels --output=file --file=PATH` (was generate-shaped, not patch-shaped; user redirects `hanko version docker labels` instead).
+- **D-019 — `helm` is its own stamper engine, not a configuration of `yaml`.**
+  `format: helm` is shorthand for "Chart.yaml shape: fixed top-level `version` + `appVersion`, `appVersion` rewritten quoted even if it was bare." The generic `yaml` engine is still available for callers who want explicit `keys:` and don't want the appVersion quoting policy.
 - **Helm Chart.yaml edit is line-based, not yaml-roundtripped.**
   Mirror comments, key order, and incidental whitespace verbatim.
   Trade-off: `version` and `appVersion` must be top-level scalars on their own lines (Helm's canonical shape).
   Anything more elaborate gets a clear refusal rather than a guess.
   yaml.v3 was added to go.mod but the editor doesn't use it; we kept the dep because the helm subcommand may grow more checks.
   _Reconsider whether to drop yaml.v3 if it stays unused through M4._
-- **`stamp docker labels --source` and `--title` are caller-supplied**, not auto-derived.
+- **`version docker labels --source` and `--title` are caller-supplied**, not auto-derived.
   We don't know the project's source URL or human-friendly title from git alone, and guessing produces garbage (`origin/.../...` vs `github.com/...` etc.).
   Callers either pass them or accept their absence in the labels.
-- **`stamp go-ldflags` stamps three fixed vars** (`version`, `commit`, `date`) on a configurable package.
+- **`version go-ldflags` stamps three fixed vars** (`version`, `commit`, `date`) on a configurable package.
   Repeatable `--var name=value` is a candidate for later but YAGNI for now — three named fields cover the ~100% case.
 - **Recurring test trap (worth its own callout):** `git describe` and `git rev-list --count <tag>..HEAD` are *reachable*-only.
   A feature branch sees its parent's commits in the count.
@@ -173,7 +180,7 @@ Add to this as you go; revisit collectively rather than litigating each one in i
 ### Future / parking lot
 
 - **Stamp-without-pre-existing-tag — revisit.**
-  User flagged discomfort with `stamp helm` happily writing a prerelease version (e.g. `1.0.0-feature-foo.3`) to Chart.yaml when no tag has been created for that version.
+  User flagged discomfort with the helm engine happily writing a prerelease version (e.g. `1.0.0-feature-foo.3`) to Chart.yaml when no tag has been created for that version.
   Today this is intentional: the CI flow is stamp-first then tag-last, so stamp can't require a pre-existing tag.
   But there may be a future "release pipeline" mode where stamp commands opt into requiring HEAD to be at a release tag.
   Park here; revisit if a concrete use case shows up.
