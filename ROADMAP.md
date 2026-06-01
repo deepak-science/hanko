@@ -104,7 +104,7 @@ Take the computed version and apply it to common artifacts.
 ### M3a — Go ldflags
 
 ```sh
-go build -ldflags "$(hanko stamp go-ldflags --package main)" ./...
+go build -ldflags "$(hanko version go-ldflags --package main)" ./...
 ```
 
 - [x] Emits `-X main.version=<SemVer> -X main.commit=<sha> -X main.date=<commit-date>`.
@@ -116,26 +116,29 @@ go build -ldflags "$(hanko stamp go-ldflags --package main)" ./...
 
 Two subcommands, deliberately split so each composes independently:
 
-- [x] `hanko stamp docker tags <image>` — emits the full image-ref fan-out (one per line).
+- [x] `hanko version docker tags <image>` — emits the full image-ref fan-out (one per line).
   Non-prerelease on mainline: `<full>`, `<major>.<minor>`, `<major>`, `:latest`.
   Pre-release: only `<full>`.
   Knobs: `--latest-on-default-branch=false`, `--branch-sha-tag=false`, repeatable `--extra <tag>`.
   Replaces cicd's `compute-image-tags` composite.
-- [x] `hanko stamp docker labels` — emits `org.opencontainers.image.*` labels.
+- [x] `hanko version docker labels` — emits `org.opencontainers.image.*` labels (stdout only).
   Always sets `version`, `revision`, `created`; `--source` and `--title` are caller-supplied.
-  Output modes: `--output args` (default, splicable into `docker build`) and `--output file --file PATH`.
+  For build-time use: splice via `docker build $(hanko version docker labels …)`. For on-disk: redirect — `hanko version docker labels > labels.txt`.
+- [ ] Patch-shaped Dockerfile LABEL engine (`format: dockerfile-labels` as a `stamp-targets:` format that rewrites existing `LABEL org.opencontainers.image.*` lines in a Dockerfile in place).
+  Parked — the file-shape is patch-friendly, but the immediate use case is build-time labels, which the stdout emitter covers.
 - [ ] Image-mutation mode (call `docker buildx imagetools` to attach labels to an already-built image).
-  Deferred — `--label`/`--label-file` covers the build-time case which is the primary one.
+  Deferred — the build-time emitter covers the primary use.
 
 ### M3c — Helm
 
 ```sh
-hanko stamp helm ./charts/foo
+hanko stamp helm   # filters stamp-targets: by format: helm
 ```
 
-- [x] Edits `Chart.yaml` in place, setting `version` and `appVersion`.
+- [x] `helm` engine in `internal/stamper`: edits `Chart.yaml` in place, fixed keys `version` + `appVersion`.
 - [x] Preserves comments and key order (line-based edit, not yaml round-trip).
-- [x] `--dry-run` prints the changes that would be made without writing.
+- [x] Forces `appVersion` to come back quoted even if the file declared it bare (Helm convention).
+- [x] `hanko stamp --dry-run` prints per-target diffs without writing.
 
 ### M3d — Plain-file substitution (stretch)
 
@@ -189,12 +192,12 @@ adjacent scope.
 
 ### M5b — `stamp-targets:` + generic stamp engine
 
-- [x] Per-format line-based stampers behind a unified engine (`internal/stamper`): `toml`, `yaml`, `json`, `nix`, `plain`.
-  Reuses the existing helm/nix line-pattern approach; canonical "key on its own line, scalar value" is the supported shape.
+- [x] Per-format line-based stampers behind a unified engine (`internal/stamper`): `toml`, `yaml`, `json`, `nix`, `helm`, `plain`.
+  Canonical "key on its own line, scalar value" is the supported shape.
 - [x] Nested keys via dotted path (`project.version` for `pyproject.toml`'s `[project]` section, etc.) — TOML engine is section-aware.
 - [x] List form for multi-key targets — schema uses a separate `keys:` field (singular `key:` is shorthand for the one-key case).
 - [x] `hanko stamp` (no args) reads `stamp-targets:` and applies all targets.
-  `stamp helm` / `stamp nix` remain as positional-arg shorthand for one-off use.
+  `hanko stamp <format>` (e.g. `stamp helm`, `stamp nix`, `stamp plain`) is a positional filter on those targets — only the matching ones get stamped.
 - [x] `hanko stamp --dry-run` reads the config and emits per-target before/after diffs.
 - [x] `hanko seal` auto-runs the declarative stamp pass before its `pre-commit:` hooks.
 
@@ -305,7 +308,7 @@ These are tempting but should wait:
 
 ## Open questions (capture as we go)
 
-- Should `hanko stamp docker` build the image, or only label an existing one?
-  Leaning: only label, build is someone else's job.
+- Should hanko ever build the image (vs. only emit labels/tags for someone else's `docker build`)?
+  Leaning: only emit, build is someone else's job.
 - Behaviour on the very first commit (no parent, no tags) — return `0.1.0-rc.1`?
   Pick once we have a test for it in M1.

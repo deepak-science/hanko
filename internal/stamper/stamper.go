@@ -20,13 +20,16 @@ import (
 // engine can't unambiguously determine where to write.
 //
 // `keys` is the list of dotted-path keys to update; all get set to `newVal`.
-// For "plain" format, keys is ignored — the whole file is replaced.
+// For "plain" and "helm" formats, keys is ignored — "plain" replaces the
+// whole file, "helm" has fixed keys (version + appVersion).
 func Stamp(format string, content []byte, keys []string, newVal string) ([]byte, string, error) {
 	switch format {
 	case "nix":
 		return stampNix(content, keys, newVal)
 	case "yaml", "yml":
 		return stampYAML(content, keys, newVal)
+	case "helm":
+		return stampHelm(content, newVal)
 	case "toml":
 		return stampTOML(content, keys, newVal)
 	case "json":
@@ -34,8 +37,19 @@ func Stamp(format string, content []byte, keys []string, newVal string) ([]byte,
 	case "plain", "text":
 		return stampPlain(content, newVal)
 	default:
-		return nil, "", fmt.Errorf("unknown stamp format %q (want: nix, yaml, toml, json, plain)", format)
+		return nil, "", fmt.Errorf("unknown stamp format %q (want: nix, yaml, helm, toml, json, plain)", format)
 	}
+}
+
+// FormatHasFixedKeys reports whether a format determines its own keys (and so
+// ignores user-supplied `keys:` in `.hanko.yaml`). Callers use this to decide
+// whether to require keys before dispatching to Stamp.
+func FormatHasFixedKeys(format string) bool {
+	switch format {
+	case "plain", "text", "helm":
+		return true
+	}
+	return false
 }
 
 // --- nix --------------------------------------------------------------------
@@ -145,6 +159,56 @@ func stampYAML(content []byte, keys []string, newVal string) ([]byte, string, er
 		if !seen[key] {
 			return nil, "", fmt.Errorf("yaml engine: no top-level `%s:` key found", key)
 		}
+	}
+	return []byte(strings.Join(lines, "\n")), strings.Join(changes, ", "), nil
+}
+
+// --- helm -------------------------------------------------------------------
+
+// helmChartKeyRE matches Chart.yaml's `version:` or `appVersion:` lines:
+// optional quotes around the value, optional trailing comment. The captured
+// groups let us preserve the prefix and any trailing comment when rewriting.
+var helmChartKeyRE = regexp.MustCompile(`^(version|appVersion)(\s*:\s*)("[^"]*"|'[^']*'|[^\s#]*)(\s*(?:#.*)?)\s*$`)
+
+// stampHelm rewrites the top-level `version:` and `appVersion:` keys in a
+// Helm Chart.yaml to the given semver. Fixed-key engine — user-supplied
+// `keys:` are ignored. Both keys must be present; missing either is an error.
+//
+// Quoting policy: preserve the file's existing quote style for both keys;
+// when a value is bare, leave `version` bare but force `appVersion` quoted —
+// Helm's convention, since appVersion is a string that often looks numeric.
+func stampHelm(content []byte, newVal string) ([]byte, string, error) {
+	lines := strings.Split(string(content), "\n")
+	seen := map[string]bool{}
+	var changes []string
+
+	for i, line := range lines {
+		m := helmChartKeyRE.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		key, sep, val, trailing := m[1], m[2], m[3], m[4]
+		old := strings.Trim(val, `"'`)
+
+		newQuoted := newVal
+		switch {
+		case strings.HasPrefix(val, `"`):
+			newQuoted = `"` + newVal + `"`
+		case strings.HasPrefix(val, `'`):
+			newQuoted = `'` + newVal + `'`
+		case key == "appVersion":
+			newQuoted = `"` + newVal + `"`
+		}
+		lines[i] = key + sep + newQuoted + trailing
+		changes = append(changes, fmt.Sprintf("%s: %s → %s", key, old, newVal))
+		seen[key] = true
+	}
+
+	if !seen["version"] {
+		return nil, "", fmt.Errorf("helm engine: no top-level `version:` key found")
+	}
+	if !seen["appVersion"] {
+		return nil, "", fmt.Errorf("helm engine: no top-level `appVersion:` key found")
 	}
 	return []byte(strings.Join(lines, "\n")), strings.Join(changes, ", "), nil
 }

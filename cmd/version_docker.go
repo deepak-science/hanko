@@ -2,21 +2,20 @@ package cmd
 
 import (
 	"fmt"
-	"os"
 	"strings"
 
 	"github.com/dmallubhotla/hanko/internal/version"
 	"github.com/spf13/cobra"
 )
 
-var stampDockerCmd = &cobra.Command{
+var versionDockerCmd = &cobra.Command{
 	Use:   "docker",
 	Short: "Emit container-image tags and OCI labels for the computed version",
 	Long: `Two subcommands:
 
-  hanko stamp docker tags <image>     # expand version into a list of full
-                                      # image references to push
-  hanko stamp docker labels           # emit org.opencontainers.image.* labels
+  hanko version docker tags <image>     # expand version into a list of full
+                                        # image references to push
+  hanko version docker labels           # emit org.opencontainers.image.* labels
 
 Both take their version from the same source as ` + "`hanko version`" + `.`,
 }
@@ -24,12 +23,12 @@ Both take their version from the same source as ` + "`hanko version`" + `.`,
 // ── tags ──────────────────────────────────────────────────────────────────
 
 var (
-	stampDockerTagsLatest    bool
-	stampDockerTagsBranchSha bool
-	stampDockerTagsExtra     []string
+	versionDockerTagsLatest    bool
+	versionDockerTagsBranchSha bool
+	versionDockerTagsExtra     []string
 )
 
-var stampDockerTagsCmd = &cobra.Command{
+var versionDockerTagsCmd = &cobra.Command{
 	Use:   "tags <image>",
 	Short: "Expand the computed version into a list of <image>:<tag> refs",
 	Long: `Emits one full image reference per line. Suitable for piping into
@@ -55,7 +54,7 @@ to moving tags would tag movement to an unstable build.
 		if err != nil {
 			return err
 		}
-		for _, tag := range computeDockerTags(v, stampDockerTagsLatest, stampDockerTagsBranchSha, stampDockerTagsExtra) {
+		for _, tag := range computeDockerTags(v, versionDockerTagsLatest, versionDockerTagsBranchSha, versionDockerTagsExtra) {
 			fmt.Printf("%s:%s\n", image, tag)
 		}
 		return nil
@@ -121,46 +120,28 @@ func sanitizeForTag(b string) string {
 // ── labels ────────────────────────────────────────────────────────────────
 
 var (
-	stampDockerLabelsOutput string
-	stampDockerLabelsFile   string
-	stampDockerLabelsSource string
-	stampDockerLabelsTitle  string
+	versionDockerLabelsSource string
+	versionDockerLabelsTitle  string
 )
 
-var stampDockerLabelsCmd = &cobra.Command{
+var versionDockerLabelsCmd = &cobra.Command{
 	Use:   "labels",
 	Short: "Emit org.opencontainers.image.* labels for the computed version",
-	Long: `Output modes:
-
-  --output args  (default) — emit one ` + "`--label key=value`" + ` per line,
-                              ready to xargs into ` + "`docker build`" + `
-  --output file  --file PATH — write a label-file (key=value per line)
-                                suitable for ` + "`docker build --label-file`" + `
+	Long: `Emits one ` + "`--label key=value`" + ` per line, ready to xargs or
+splice into ` + "`docker build`" + `.
 
 Always sets ` + "`version`, `revision`, `created`" + `. Pass ` + "`--source`" + ` and
-` + "`--title`" + ` to set the matching labels; absent values are omitted.`,
+` + "`--title`" + ` to set the matching labels; absent values are omitted.
+
+For persisting labels into a file or Dockerfile, redirect this command's
+output yourself — hanko keeps emitters stdout-only on purpose.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		v, err := resolveVersion("")
 		if err != nil {
 			return err
 		}
-		pairs := dockerLabels(v, stampDockerLabelsSource, stampDockerLabelsTitle)
-
-		switch stampDockerLabelsOutput {
-		case "args":
-			for _, p := range pairs {
-				fmt.Printf("--label %s\n", p)
-			}
-		case "file":
-			if stampDockerLabelsFile == "" {
-				return fmt.Errorf("--output file requires --file PATH")
-			}
-			content := strings.Join(pairs, "\n") + "\n"
-			if err := os.WriteFile(stampDockerLabelsFile, []byte(content), 0o644); err != nil {
-				return fmt.Errorf("write label file: %w", err)
-			}
-		default:
-			return fmt.Errorf("unknown --output %q (want: args, file)", stampDockerLabelsOutput)
+		for _, p := range dockerLabels(v, versionDockerLabelsSource, versionDockerLabelsTitle) {
+			fmt.Printf("--label %s\n", p)
 		}
 		return nil
 	},
@@ -184,16 +165,14 @@ func dockerLabels(v version.Version, source, title string) []string {
 }
 
 func init() {
-	stampDockerTagsCmd.Flags().BoolVar(&stampDockerTagsLatest, "latest-on-default-branch", true, "emit :latest when on main/master and non-prerelease")
-	stampDockerTagsCmd.Flags().BoolVar(&stampDockerTagsBranchSha, "branch-sha-tag", true, "emit :<branch>-<short-sha>")
-	stampDockerTagsCmd.Flags().StringArrayVar(&stampDockerTagsExtra, "extra", nil, "extra raw tag to append (repeatable)")
-	stampDockerCmd.AddCommand(stampDockerTagsCmd)
+	versionDockerTagsCmd.Flags().BoolVar(&versionDockerTagsLatest, "latest-on-default-branch", true, "emit :latest when on main/master and non-prerelease")
+	versionDockerTagsCmd.Flags().BoolVar(&versionDockerTagsBranchSha, "branch-sha-tag", true, "emit :<branch>-<short-sha>")
+	versionDockerTagsCmd.Flags().StringArrayVar(&versionDockerTagsExtra, "extra", nil, "extra raw tag to append (repeatable)")
+	versionDockerCmd.AddCommand(versionDockerTagsCmd)
 
-	stampDockerLabelsCmd.Flags().StringVar(&stampDockerLabelsOutput, "output", "args", "output mode: args | file")
-	stampDockerLabelsCmd.Flags().StringVar(&stampDockerLabelsFile, "file", "", "destination path for --output file")
-	stampDockerLabelsCmd.Flags().StringVar(&stampDockerLabelsSource, "source", "", "value for org.opencontainers.image.source (omitted if empty)")
-	stampDockerLabelsCmd.Flags().StringVar(&stampDockerLabelsTitle, "title", "", "value for org.opencontainers.image.title (omitted if empty)")
-	stampDockerCmd.AddCommand(stampDockerLabelsCmd)
+	versionDockerLabelsCmd.Flags().StringVar(&versionDockerLabelsSource, "source", "", "value for org.opencontainers.image.source (omitted if empty)")
+	versionDockerLabelsCmd.Flags().StringVar(&versionDockerLabelsTitle, "title", "", "value for org.opencontainers.image.title (omitted if empty)")
+	versionDockerCmd.AddCommand(versionDockerLabelsCmd)
 
-	stampCmd.AddCommand(stampDockerCmd)
+	versionCmd.AddCommand(versionDockerCmd)
 }

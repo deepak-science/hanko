@@ -121,6 +121,8 @@ At release time, those files get bumped in lock-step with the new git tag.
 The `stamp-targets:` section declares which files to mutate.
 Each target is `(path, format, key)`.
 A single `hanko stamp` invocation walks the list and applies all of them.
+Pass a positional `[format]` to filter (`hanko stamp helm` applies only the helm targets, `hanko stamp nix` only the nix ones, and so on) — useful as a focused build-step.
+An unknown format errors rather than silently no-op'ing.
 
 ```yaml
 stamp-targets:
@@ -128,9 +130,12 @@ stamp-targets:
     format: toml
     key: project.version
 
-  - path: Chart.yaml
+  - path: Chart.yaml             # generic YAML; fully explicit keys
     format: yaml
-    keys: [version, appVersion]   # multiple keys → use `keys:` (list form)
+    keys: [version, appVersion]
+
+  - path: charts/demo/Chart.yaml # helm engine; fixed-keys (version + appVersion),
+    format: helm                 # appVersion always rewritten quoted
 
   - path: package.json
     format: json
@@ -145,7 +150,9 @@ stamp-targets:
 ```
 
 `key:` is the singular form (one key) and `keys:` is the list form (when several attrs in the same file get the same value, like Chart.yaml's `version` + `appVersion`).
-A target must set exactly one of them (except `format: plain`, which ignores both).
+A target must set exactly one of them — except for fixed-keys engines (`plain`, `text`, `helm`), which determine their own keys and ignore both.
+
+The `helm` engine is the recommended shape for `Chart.yaml`: it knows the file always has top-level `version` + `appVersion`, and Helm's convention that `appVersion` should remain a quoted string even if it looks numeric. The generic `yaml` engine still works (with explicit `keys: [version, appVersion]`) if you need to override.
 
 ### Engine choice — line-based first
 
@@ -316,8 +323,7 @@ hanko taking sides.
   `hanko seal --abort` to revert? Or trust the user with `git checkout -- .`?
   Leaning trust-the-user; an `--abort` is documentation more than logic.
 - **`stamp-targets` discovery for repos without `.hanko.yaml`.**
-  Today's `stamp helm <chart-dir>` and `stamp nix <file>` accept positional paths.
-  Probably keep them as shorthand even after config-driven `stamp` lands; the positional form is "I know what I want, just do it."
+  Closed: the old `stamp helm <chart-dir>` / `stamp nix <file>` standalone modes were removed when `stamp <format>` became a positional filter on `stamp-targets:`. The "I know what I want, just do it" use case is now "add the one-line target to `.hanko.yaml`". One mental model for `stamp` instead of two; cost is a tiny config burden on first use.
 
 ## Cross-references
 

@@ -266,6 +266,37 @@ func TestLoad_validationErrors(t *testing.T) {
 	}
 }
 
+func TestLoad_fixedKeysFormatsAcceptOmittedKeys(t *testing.T) {
+	// plain, text, and helm engines determine their own keys (plain replaces
+	// the whole file; helm always rewrites version + appVersion). Config
+	// validation must NOT require `key:` or `keys:` for these formats.
+	cases := map[string]string{
+		"plain": `stamp-targets:
+  - path: VERSION
+    format: plain
+`,
+		"text": `stamp-targets:
+  - path: VERSION
+    format: text
+`,
+		"helm": `stamp-targets:
+  - path: charts/demo/Chart.yaml
+    format: helm
+`,
+	}
+	for name, yaml := range cases {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, ConfigFileName), []byte(yaml), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := Load(dir); err != nil {
+				t.Errorf("format %q with no keys should pass validation, got: %v", name, err)
+			}
+		})
+	}
+}
+
 func TestLoad_walksUpToFindConfig(t *testing.T) {
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, ConfigFileName), []byte("on-shallow: ignore\n"), 0o644); err != nil {
