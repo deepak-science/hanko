@@ -17,3 +17,4 @@ Update these as the binary acquires features — when hanko reaches v1, this fol
   Pair with a tag-triggered workflow (like this repo's own `release.yml`) that handles the post-tag publish step.
 - [`local-usage.md`](./local-usage.md) — how a developer would invoke hanko on their workstation.
   Read-only by default, no surprises.
+- [`nix-wiring.md`](./nix-wiring.md) — consuming hanko from another flake: CLI on PATH, the stamped-version pattern (D-015), and `hanko.lib.mkGoLdflags` for wiring ldflags into `buildGoApplication` without shelling out to hanko at build time.
