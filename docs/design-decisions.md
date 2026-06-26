@@ -39,6 +39,17 @@ Add to this as you go; revisit collectively rather than litigating each one in i
   `version docker tags` owns the `<full> / <major>.<minor> / <major> / :latest` policy.
   Resolved in M3; cicd's `compute-image-tags` composite becomes deletable.
 
+- **D-020 — `:latest` on a tag-push is opt-in via `--latest-on-release-tag`; `--semver-tags=false` keeps only the branch-sha ref.**
+  Surfaced by kestrel's docker publish (`docs/notes-kestrel-docker.md`): a `push: tags:` release job checks out a detached HEAD, so the D-001 path emits the right *version* but `BranchName` is the `"detached"` sentinel, and `--latest-on-default-branch` (D-009: main/master only) can never move `:latest` — the one place you most want it.
+  Fix: `Version.AtReleaseTag` (set in the D-001 path) records "HEAD is a release tag". `version docker tags --latest-on-release-tag` (default **false**) makes such a build `:latest`-eligible, still guarded by non-prerelease.
+  **Why opt-in, not automatic.** Matches the emitters' "build script says exactly what it injects" stance (D-018) and avoids the maintenance-branch footgun (tagging an old `v1.x` after `v2.0` shipped would clobber `:latest`). We deliberately did **not** gate on `git merge-base --is-ancestor` reachability — that would force the pure-function emitter to take a git dependency; an explicit per-job flag is the simpler contract. Reachability-gating stays parked if a concrete need shows up.
+  **Why a separate flag, not broadening `--latest-on-default-branch`.** Two independent triggers (mainline HEAD vs. a release tag) stay independently controllable, and existing callers see no behaviour change.
+  Also added `--semver-tags` (default true): `--semver-tags=false` suppresses the `<full>/<major.minor>/<major>/:latest` fan-out and keeps only `<branch>-<sha>` (plus `--extra`s) — the natural shape for non-release "edge" publishing (`main-abc1234` on every mainline commit, semver refs only on release tags), the inverse of the existing `--branch-sha-tag=false`.
+
+- **D-021 — Nix-built images can't consume `version docker labels`; bake labels from the sealed `version` instead.**
+  `dockerTools.buildLayeredImage` has no `docker build` step to receive `--label` args, and the nix sandbox can't run hanko anyway.
+  Not a code change — a documented caveat (README emitter notes) so the next nix consumer doesn't hunt for a stamp target that can't exist. Flagged by kestrel, which bakes OCI labels into the flake from the hanko-sealed `version` variable.
+
 - **D-009 — Hardcode main/master as the only mainline branches. No `--default-branch` flag.**
   Org policy: `main` is the canonical name; `master` is kept for legacy.
   Anything else (`develop`, `trunk`, …) is outside hanko's convention and gets feature-branch treatment.

@@ -48,9 +48,10 @@ Stamp commands come in two flavors, sorted by what they touch:
 
 - **Build-time emitters (stdout).** Under `hanko version`.
   `version go-ldflags` prints `-X main.version=…` for splicing into `go build`.
-  `version docker tags <image>` prints the image-ref fan-out.
+  `version docker tags <image>` prints the image-ref fan-out — `--semver-tags=false` keeps only the `<branch>-<sha>` ref for non-release "edge" publishing, and `--latest-on-release-tag` moves `:latest` on a tag-push (detached-at-tag) release job where `--latest-on-default-branch` can't fire.
   `version docker labels` emits `--label org.opencontainers.image.*` args.
   These run on every build, don't touch the repo, and any dirtied worktree from a build directory is discarded with it. No config file is consulted — pass flags explicitly so your build script tells the whole story at the call site.
+  (Nix-built images via `dockerTools.buildLayeredImage` have no `docker build` step to consume `version docker labels`, and the build sandbox can't run hanko anyway — bake OCI labels into the flake from the hanko-sealed `version` variable instead.)
 - **Release-time file edits.** Under `hanko stamp`.
   `stamp` (no args) reads `stamp-targets:` from `.hanko.yaml` and applies every declared target in one pass — works across `pyproject.toml`, `package.json`, `Cargo.toml`, `Chart.yaml`, `flake.nix`, plain `VERSION` files.
   `stamp <format>` (e.g. `stamp helm`, `stamp nix`, `stamp plain`) is a positional filter: same config, only the targets whose `format:` matches. Useful as a build-step that touches one kind of file.
