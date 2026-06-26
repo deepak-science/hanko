@@ -85,6 +85,7 @@
           modules = ./gomod2nix.toml;
           nativeBuildInputs = [ final.installShellFiles ];
           nativeCheckInputs = [ final.git ];
+          CGO_ENABLED = 0;
           ldflags = commonLdflags;
           postInstall = ''
             installShellCompletion --cmd hanko \
