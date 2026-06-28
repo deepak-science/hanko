@@ -35,6 +35,14 @@ type Version struct {
 
 	IsPreRelease bool `json:"isPreRelease"`
 
+	// AtReleaseTag is true when HEAD is a release tag itself — the D-001
+	// detached-at-tag case. Distinct from IsPreRelease: a prerelease tag
+	// (v1.2.3-rc.1) is still AtReleaseTag. Build-time emitters use it to treat
+	// a tag-push checkout as a canonical release (e.g. `:latest` eligibility)
+	// even though BranchName is the "detached" sentinel. Internal-only; not
+	// part of the JSON output contract.
+	AtReleaseTag bool `json:"-"`
+
 	// Decision records the rationale behind this computation. Excluded from
 	// JSON (the public output is the version itself); surfaced via
 	// `--verbose` for human inspection.
@@ -308,6 +316,7 @@ func versionFromTagAtHead(info gitinfo.Info, prefixRegex string) Version {
 		ShortSha:      info.ShortSha,
 		CommitDate:    info.CommitDate,
 		IsPreRelease:  pre != "",
+		AtReleaseTag:  true,
 	}
 	v.SemVer = composeSemVer(v.Major, v.Minor, v.Patch, v.PreRelease)
 	v.FullSemVer = v.SemVer

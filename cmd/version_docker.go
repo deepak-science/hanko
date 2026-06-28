@@ -23,9 +23,11 @@ Both take their version from the same source as ` + "`hanko version`" + `.`,
 // ── tags ──────────────────────────────────────────────────────────────────
 
 var (
-	versionDockerTagsLatest    bool
-	versionDockerTagsBranchSha bool
-	versionDockerTagsExtra     []string
+	versionDockerTagsLatest        bool
+	versionDockerTagsLatestRelease bool
+	versionDockerTagsSemver        bool
+	versionDockerTagsBranchSha     bool
+	versionDockerTagsExtra         []string
 )
 
 var versionDockerTagsCmd = &cobra.Command{
@@ -44,6 +46,15 @@ Default fan-out for a non-prerelease semver on the default branch:
 For a pre-release semver, only ` + "`<image>:<full>`" + ` is emitted — fan-out
 to moving tags would tag movement to an unstable build.
 
+` + "`--latest-on-release-tag`" + ` (default false) also emits ` + "`<image>:latest`" + `
+when HEAD is a non-prerelease release tag (the detached-at-tag case a
+` + "`push: tags:`" + ` CI job checks out) — the one place ` + "`--latest-on-default-branch`" + `
+can't fire because the branch is the "detached" sentinel.
+
+` + "`--semver-tags`" + ` (default true) controls the semver fan-out above; pass
+` + "`--semver-tags=false`" + ` to keep only the branch-sha ref (and ` + "`--extra`" + `s),
+the natural shape for non-release "edge" publishing.
+
 ` + "`--branch-sha-tag`" + ` (default true) additionally emits
 ` + "`<image>:<branch>-<short-sha>`" + `.
 ` + "`--extra`" + ` appends raw tags after the computed ones; repeatable.`,
@@ -54,7 +65,7 @@ to moving tags would tag movement to an unstable build.
 		if err != nil {
 			return err
 		}
-		for _, tag := range computeDockerTags(v, versionDockerTagsLatest, versionDockerTagsBranchSha, versionDockerTagsExtra) {
+		for _, tag := range computeDockerTags(v, versionDockerTagsLatest, versionDockerTagsLatestRelease, versionDockerTagsSemver, versionDockerTagsBranchSha, versionDockerTagsExtra) {
 			fmt.Printf("%s:%s\n", image, tag)
 		}
 		return nil
@@ -64,17 +75,19 @@ to moving tags would tag movement to an unstable build.
 // computeDockerTags returns the list of tag suffixes (without the image
 // prefix) implied by v and the caller's policy. Pure function so the test
 // can hit it directly.
-func computeDockerTags(v version.Version, latest, branchSha bool, extras []string) []string {
+func computeDockerTags(v version.Version, latest, latestRelease, semverTags, branchSha bool, extras []string) []string {
 	var tags []string
-	tags = append(tags, v.SemVer)
 
-	if !v.IsPreRelease {
-		tags = append(tags,
-			fmt.Sprintf("%d.%d", v.Major, v.Minor),
-			fmt.Sprintf("%d", v.Major),
-		)
-		if latest && isMainline(v.BranchName) {
-			tags = append(tags, "latest")
+	if semverTags {
+		tags = append(tags, v.SemVer)
+		if !v.IsPreRelease {
+			tags = append(tags,
+				fmt.Sprintf("%d.%d", v.Major, v.Minor),
+				fmt.Sprintf("%d", v.Major),
+			)
+			if latestEligible(v, latest, latestRelease) {
+				tags = append(tags, "latest")
+			}
 		}
 	}
 
@@ -89,6 +102,17 @@ func computeDockerTags(v version.Version, latest, branchSha bool, extras []strin
 		}
 	}
 	return tags
+}
+
+// latestEligible reports whether `:latest` should move to this build. Two
+// independent triggers, each opt-in via its own flag and only for a
+// non-prerelease (the caller already guards on !IsPreRelease):
+//   - mainline HEAD     — `--latest-on-default-branch` and branch is main/master
+//   - a release tag     — `--latest-on-release-tag` and HEAD is the tag itself
+//     (D-001 detached-at-tag), where BranchName is the "detached" sentinel so
+//     the mainline check can never see it.
+func latestEligible(v version.Version, latest, latestRelease bool) bool {
+	return (latest && isMainline(v.BranchName)) || (latestRelease && v.AtReleaseTag)
 }
 
 func isMainline(b string) bool { return b == "main" || b == "master" }
@@ -166,6 +190,8 @@ func dockerLabels(v version.Version, source, title string) []string {
 
 func init() {
 	versionDockerTagsCmd.Flags().BoolVar(&versionDockerTagsLatest, "latest-on-default-branch", true, "emit :latest when on main/master and non-prerelease")
+	versionDockerTagsCmd.Flags().BoolVar(&versionDockerTagsLatestRelease, "latest-on-release-tag", false, "emit :latest when HEAD is a non-prerelease release tag (detached-at-tag CI checkout)")
+	versionDockerTagsCmd.Flags().BoolVar(&versionDockerTagsSemver, "semver-tags", true, "emit the semver fan-out (<full>/<major.minor>/<major>/:latest); false keeps only the branch-sha ref")
 	versionDockerTagsCmd.Flags().BoolVar(&versionDockerTagsBranchSha, "branch-sha-tag", true, "emit :<branch>-<short-sha>")
 	versionDockerTagsCmd.Flags().StringArrayVar(&versionDockerTagsExtra, "extra", nil, "extra raw tag to append (repeatable)")
 	versionDockerCmd.AddCommand(versionDockerTagsCmd)

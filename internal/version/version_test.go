@@ -14,6 +14,7 @@ func TestCompute(t *testing.T) {
 		wantSemVer string
 		wantFull   string
 		wantPre    bool
+		wantAtTag  bool
 	}{
 		{
 			name: "mainline no commits since tag",
@@ -130,6 +131,7 @@ func TestCompute(t *testing.T) {
 			},
 			wantSemVer: "1.2.3",
 			wantFull:   "1.2.3",
+			wantAtTag:  true,
 		},
 		{
 			name: "detached HEAD at a prerelease tag → emit prerelease verbatim (D-001)",
@@ -140,6 +142,7 @@ func TestCompute(t *testing.T) {
 			wantSemVer: "1.2.3-rc.1",
 			wantFull:   "1.2.3-rc.1",
 			wantPre:    true,
+			wantAtTag:  true,
 		},
 		{
 			name: "detached HEAD at a dirty tag → emit tag + dirty suffix (D-001)",
@@ -149,6 +152,7 @@ func TestCompute(t *testing.T) {
 			},
 			wantSemVer: "1.2.3",
 			wantFull:   "1.2.3+dirty",
+			wantAtTag:  true,
 		},
 		{
 			name: "non-detached at a tag (mainline policy) → plain release",
@@ -175,6 +179,9 @@ func TestCompute(t *testing.T) {
 			}
 			if v.IsPreRelease != tc.wantPre {
 				t.Errorf("IsPreRelease = %v, want %v", v.IsPreRelease, tc.wantPre)
+			}
+			if v.AtReleaseTag != tc.wantAtTag {
+				t.Errorf("AtReleaseTag = %v, want %v", v.AtReleaseTag, tc.wantAtTag)
 			}
 		})
 	}
