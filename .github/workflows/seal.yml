@@ -21,7 +21,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      id-token: write
     steps:
       - name: Mint App token
         id: app-token
@@ -34,7 +33,17 @@ jobs:
           fetch-depth: 0
           token: ${{ steps.app-token.outputs.token }}
       - uses: DeterminateSystems/nix-installer-action@ef8a148080ab6020fd15196c2084a2eea5ff2d25 # v22
-      - uses: DeterminateSystems/flakehub-cache-action@main
+      - uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569 # v7.0.2
+        with:
+          primary-key: nix-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/*.nix', '**/flake.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-${{ runner.arch }}-
+          # Cap the saved /nix/store at 3 GB so two arch caches stay well under GitHub's 10 GB repo limit.
+          gc-max-store-size-linux: 3221225472
+          # Drop stale caches for this prefix on every run, keeping only the one we just saved.
+          purge: true
+          purge-prefixes: nix-${{ runner.os }}-${{ runner.arch }}-
+          purge-created: 0
+          purge-primary-key: never
       - name: Configure git identity
         env:
           APP_SLUG: ${{ steps.app-token.outputs.app-slug }}
