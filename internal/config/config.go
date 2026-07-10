@@ -258,10 +258,10 @@ func validate(c *Config) error {
 		}
 		switch s.Format {
 		case "":
-			return fmt.Errorf("stamp-targets[%d].format: required (one of toml|yaml|yml|json|nix|helm|plain|text)", i)
-		case "toml", "yaml", "yml", "json", "nix", "helm", "plain", "text":
+			return fmt.Errorf("stamp-targets[%d].format: required (one of toml|yaml|yml|json|nix|helm|plain|text|go)", i)
+		case "toml", "yaml", "yml", "json", "nix", "helm", "plain", "text", "go":
 		default:
-			return fmt.Errorf("stamp-targets[%d].format: %q is not one of toml|yaml|yml|json|nix|helm|plain|text", i, s.Format)
+			return fmt.Errorf("stamp-targets[%d].format: %q is not one of toml|yaml|yml|json|nix|helm|plain|text|go", i, s.Format)
 		}
 		if s.Key != "" && len(s.Keys) > 0 {
 			return fmt.Errorf("stamp-targets[%d]: set either key: or keys:, not both", i)

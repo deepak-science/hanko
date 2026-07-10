@@ -36,8 +36,10 @@ func Stamp(format string, content []byte, keys []string, newVal string) ([]byte,
 		return stampJSON(content, keys, newVal)
 	case "plain", "text":
 		return stampPlain(content, newVal)
+	case "go":
+		return stampGo(content, keys, newVal)
 	default:
-		return nil, "", fmt.Errorf("unknown stamp format %q (want: nix, yaml, helm, toml, json, plain)", format)
+		return nil, "", fmt.Errorf("unknown stamp format %q (want: nix, yaml, helm, toml, json, plain, go)", format)
 	}
 }
 
@@ -347,4 +349,76 @@ func stampJSON(content []byte, keys []string, newVal string) ([]byte, string, er
 func stampPlain(content []byte, newVal string) ([]byte, string, error) {
 	old := strings.TrimRight(string(content), "\n")
 	return []byte(newVal + "\n"), fmt.Sprintf("contents: %s → %s", old, newVal), nil
+}
+
+// --- go ---------------------------------------------------------------------
+
+// goConstLineRE matches `const|var <key> [<type>] = "..."` with optional
+// leading whitespace and an optional trailing `// ...` comment.
+//
+// The `\b` after the key name prevents a prefix match: looking for `Version`
+// will not fire on `VersionBeta` or `AppVersion` (the latter requires that
+// `AppVersion` follows `const|var\s+`, which it does in its own right, but
+// the key literal itself is anchored by the leading `\s+`).
+func goConstLineRE(key string) *regexp.Regexp {
+	return regexp.MustCompile(
+		`^(\s*(?:const|var)\s+` + regexp.QuoteMeta(key) + `\b(?:\s+\w+)?\s*=\s*)"([^"]*)"(\s*(?://.*)?)\s*$`,
+	)
+}
+
+// stampGo rewrites `const <key> = "..."` or `var <key> = "..."` declarations
+// in a Go source file to `newVal`. Also handles an optional type annotation
+// (`const Version string = "..."`). Line-based; canonical single-line form
+// only — grouped const(...) blocks whose inner lines lack a `const` keyword
+// are not matched.
+//
+// When the same identifier appears more than once (unusual but possible in
+// generated files), all occurrences are rewritten if they share the same
+// current value; divergent values are refused.
+func stampGo(content []byte, keys []string, newVal string) ([]byte, string, error) {
+	if len(keys) == 0 {
+		return nil, "", fmt.Errorf("go engine: at least one key required")
+	}
+	out := string(content)
+	var descs []string
+	for _, key := range keys {
+		var err error
+		var desc string
+		out, desc, err = stampGoOne(out, key, newVal)
+		if err != nil {
+			return nil, "", err
+		}
+		descs = append(descs, desc)
+	}
+	return []byte(out), strings.Join(descs, ", "), nil
+}
+
+func stampGoOne(content, key, newVal string) (string, string, error) {
+	re := goConstLineRE(key)
+	lines := strings.Split(content, "\n")
+
+	type hit struct {
+		idx                  int
+		prefix, old, trailer string
+	}
+	var hits []hit
+	for i, line := range lines {
+		m := re.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		hits = append(hits, hit{i, m[1], m[2], m[3]})
+	}
+	if len(hits) == 0 {
+		return "", "", fmt.Errorf("go engine: no `const/var %s = \"...\"` declaration found", key)
+	}
+	for _, h := range hits[1:] {
+		if h.old != hits[0].old {
+			return "", "", fmt.Errorf("go engine: multiple %q declarations with different values (%q vs %q); remove the duplicate", key, hits[0].old, h.old)
+		}
+	}
+	for _, h := range hits {
+		lines[h.idx] = h.prefix + `"` + newVal + `"` + h.trailer
+	}
+	return strings.Join(lines, "\n"), fmt.Sprintf("%s: %s → %s", key, hits[0].old, newVal), nil
 }
