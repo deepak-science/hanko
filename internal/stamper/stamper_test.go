@@ -300,10 +300,305 @@ func TestFormatHasFixedKeys(t *testing.T) {
 			t.Errorf("FormatHasFixedKeys(%q) = false, want true", f)
 		}
 	}
-	for _, f := range []string{"yaml", "yml", "toml", "json", "nix", "bogus"} {
+	for _, f := range []string{"yaml", "yml", "toml", "json", "nix", "go", "bogus"} {
 		if FormatHasFixedKeys(f) {
 			t.Errorf("FormatHasFixedKeys(%q) = true, want false", f)
 		}
+	}
+}
+
+// --- go engine --------------------------------------------------------------
+
+func TestStamp_goConstBasic(t *testing.T) {
+	in := `package common
+
+const Version = "0.1.0"
+`
+	out, desc, err := Stamp("go", []byte(in), []string{"Version"}, "1.2.3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), `const Version = "1.2.3"`) {
+		t.Errorf("not rewritten:\n%s", out)
+	}
+	if desc != "Version: 0.1.0 → 1.2.3" {
+		t.Errorf("desc = %q", desc)
+	}
+}
+
+func TestStamp_goVarDeclaration(t *testing.T) {
+	in := `package main
+
+var Version = "0.1.0"
+`
+	out, _, err := Stamp("go", []byte(in), []string{"Version"}, "2.0.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), `var Version = "2.0.0"`) {
+		t.Errorf("var declaration not rewritten:\n%s", out)
+	}
+}
+
+func TestStamp_goTypedConst(t *testing.T) {
+	in := `package common
+
+const Version string = "0.1.0"
+`
+	out, _, err := Stamp("go", []byte(in), []string{"Version"}, "3.0.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), `const Version string = "3.0.0"`) {
+		t.Errorf("typed const not rewritten:\n%s", out)
+	}
+}
+
+func TestStamp_goTypedVar(t *testing.T) {
+	in := `package main
+
+var Version string = "0.1.0"
+`
+	out, _, err := Stamp("go", []byte(in), []string{"Version"}, "3.0.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), `var Version string = "3.0.0"`) {
+		t.Errorf("typed var not rewritten:\n%s", out)
+	}
+}
+
+func TestStamp_goHubcapStyle(t *testing.T) {
+	// Mirrors internal/common/version.go in hubcap — the real-world target.
+	in := `package common
+
+// Canonical version number.
+// Advertised as the MCP server's Implementation.Version.
+const Version = "0.1.0"
+`
+	out, desc, err := Stamp("go", []byte(in), []string{"Version"}, "0.2.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	if !strings.Contains(s, `const Version = "0.2.0"`) {
+		t.Errorf("version not rewritten:\n%s", s)
+	}
+	if strings.Contains(s, `"0.1.0"`) {
+		t.Errorf("old value still present:\n%s", s)
+	}
+	if !strings.Contains(s, "// Canonical version number.") {
+		t.Errorf("comment above declaration was lost:\n%s", s)
+	}
+	if desc != "Version: 0.1.0 → 0.2.0" {
+		t.Errorf("desc = %q", desc)
+	}
+}
+
+func TestStamp_goPreservesTrailingComment(t *testing.T) {
+	in := `package main
+
+const Version = "0.1.0" // set by hanko stamp
+`
+	out, _, err := Stamp("go", []byte(in), []string{"Version"}, "9.9.9")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	if !strings.Contains(s, `const Version = "9.9.9" // set by hanko stamp`) {
+		t.Errorf("trailing comment lost or value not rewritten:\n%s", s)
+	}
+}
+
+func TestStamp_goIdempotent(t *testing.T) {
+	in := `package common
+
+const Version = "1.2.3"
+`
+	out, _, err := Stamp("go", []byte(in), []string{"Version"}, "1.2.3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(out) != in {
+		t.Errorf("expected no-op when version unchanged:\nin:  %q\nout: %q", in, string(out))
+	}
+}
+
+func TestStamp_goRefusesMissingKey(t *testing.T) {
+	in := `package common
+
+const AppVersion = "0.1.0"
+`
+	_, _, err := Stamp("go", []byte(in), []string{"Version"}, "1.0.0")
+	if err == nil {
+		t.Fatal("expected error for missing Version declaration")
+	}
+	if !strings.Contains(err.Error(), "Version") {
+		t.Errorf("error should name the missing key: %s", err)
+	}
+}
+
+func TestStamp_goDifferentKeyNotTouched(t *testing.T) {
+	// AppVersion and Version are distinct identifiers.
+	in := `package main
+
+const AppVersion = "0.1.0"
+const Version = "0.1.0"
+`
+	out, _, err := Stamp("go", []byte(in), []string{"Version"}, "9.9.9")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	if !strings.Contains(s, `const AppVersion = "0.1.0"`) {
+		t.Errorf("AppVersion was incorrectly rewritten:\n%s", s)
+	}
+	if !strings.Contains(s, `const Version = "9.9.9"`) {
+		t.Errorf("Version was not rewritten:\n%s", s)
+	}
+}
+
+func TestStamp_goSuffixedNameNotTouched(t *testing.T) {
+	// VersionBeta must not match when the key is "Version" (word boundary).
+	in := `package main
+
+const VersionBeta = "0.1.0-beta"
+const Version = "0.1.0"
+`
+	out, _, err := Stamp("go", []byte(in), []string{"Version"}, "9.9.9")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	if !strings.Contains(s, `const VersionBeta = "0.1.0-beta"`) {
+		t.Errorf("VersionBeta was incorrectly rewritten:\n%s", s)
+	}
+	if !strings.Contains(s, `const Version = "9.9.9"`) {
+		t.Errorf("Version was not rewritten:\n%s", s)
+	}
+}
+
+func TestStamp_goCommentedOutDeclarationNotTouched(t *testing.T) {
+	// A commented-out declaration must not be matched.
+	in := `package main
+
+// const Version = "0.0.0"
+const Version = "0.1.0"
+`
+	out, _, err := Stamp("go", []byte(in), []string{"Version"}, "9.9.9")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	if !strings.Contains(s, `// const Version = "0.0.0"`) {
+		t.Errorf("commented declaration was altered:\n%s", s)
+	}
+	if !strings.Contains(s, `const Version = "9.9.9"`) {
+		t.Errorf("live declaration not rewritten:\n%s", s)
+	}
+}
+
+func TestStamp_goMultipleDeclsSameValueAllRewritten(t *testing.T) {
+	// Two identical declarations (unusual, but possible in generated files)
+	// should both be rewritten when they share the same current value.
+	in := `package main
+
+const Version = "0.1.0"
+
+// second copy in generated block
+const Version = "0.1.0"
+`
+	out, _, err := Stamp("go", []byte(in), []string{"Version"}, "9.9.9")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	if got := strings.Count(s, `const Version = "9.9.9"`); got != 2 {
+		t.Errorf("expected 2 lines rewritten, got %d:\n%s", got, s)
+	}
+	if strings.Contains(s, `"0.1.0"`) {
+		t.Errorf("old value still present:\n%s", s)
+	}
+}
+
+func TestStamp_goDivergentDuplicatesRefused(t *testing.T) {
+	// Two declarations with different values are ambiguous — refuse rather
+	// than guess which one the user intended to update.
+	in := `package main
+
+const Version = "0.1.0"
+const Version = "0.2.0"
+`
+	_, _, err := Stamp("go", []byte(in), []string{"Version"}, "9.9.9")
+	if err == nil {
+		t.Fatal("expected error for divergent duplicate declarations")
+	}
+	if !strings.Contains(err.Error(), "Version") {
+		t.Errorf("error should name the conflicting key: %s", err)
+	}
+	if !strings.Contains(err.Error(), "0.1.0") || !strings.Contains(err.Error(), "0.2.0") {
+		t.Errorf("error should show both conflicting values: %s", err)
+	}
+}
+
+func TestStamp_goMultipleKeys(t *testing.T) {
+	// Multiple keys in a single file each get stamped.
+	in := `package main
+
+const Version = "0.1.0"
+const BuildDate = "2024-01-01"
+`
+	out, desc, err := Stamp("go", []byte(in), []string{"Version", "BuildDate"}, "1.0.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	if !strings.Contains(s, `const Version = "1.0.0"`) {
+		t.Errorf("Version not rewritten:\n%s", s)
+	}
+	if !strings.Contains(s, `const BuildDate = "1.0.0"`) {
+		t.Errorf("BuildDate not rewritten:\n%s", s)
+	}
+	if !strings.Contains(desc, "Version:") || !strings.Contains(desc, "BuildDate:") {
+		t.Errorf("desc missing keys: %q", desc)
+	}
+}
+
+func TestStamp_goStringLiteralInCodeNotTouched(t *testing.T) {
+	// A string containing the pattern inside a function body is not a
+	// top-level declaration and must not be matched.
+	in := `package main
+
+const Version = "0.1.0"
+
+func describe() string {
+	return "const Version = \"old\""
+}
+`
+	out, _, err := Stamp("go", []byte(in), []string{"Version"}, "9.9.9")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	if !strings.Contains(s, `const Version = "9.9.9"`) {
+		t.Errorf("declaration not rewritten:\n%s", s)
+	}
+	// The string inside describe() uses escaped quotes so it won't match the
+	// regex anyway, but verify the function body is intact.
+	if !strings.Contains(s, "func describe()") {
+		t.Errorf("function body was altered:\n%s", s)
+	}
+}
+
+func TestStamp_goViaStampDispatch(t *testing.T) {
+	// Verify the "go" case is wired in Stamp().
+	in := "package main\n\nconst Version = \"0.0.1\"\n"
+	out, _, err := Stamp("go", []byte(in), []string{"Version"}, "1.0.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(out), `const Version = "1.0.0"`) {
+		t.Errorf("dispatch did not reach go engine:\n%s", out)
 	}
 }
 
