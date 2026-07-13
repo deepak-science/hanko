@@ -196,6 +196,15 @@ Add to this as you go; revisit collectively rather than litigating each one in i
   But there may be a future "release pipeline" mode where stamp commands opt into requiring HEAD to be at a release tag.
   Park here; revisit if a concrete use case shows up.
 
+- **`:latest` is nested under `--semver-tags`, so edge publishing can't get a *guarded* `:latest` — decouple.**
+  Surfaced by socq's edge publish (proxmox-homelab `k8s-manifests/socq`, image from `soccer-boids`).
+  The natural non-release invocation is `--semver-tags=false` — you don't want semver refs on an edge build — but in `computeDockerTags` the `latestEligible` check lives *inside* the `if semverTags` block, so `--semver-tags=false` also silences `--latest-on-default-branch` (D-009).
+  Callers then reach for `--extra latest`, which appends the tag verbatim with **no** guard: not gated on main/master, not gated on non-prerelease (D-011).
+  Net effect in the wild: socq's master merges published only `:master-<sha>` (someone dropped the `--extra`), so `:latest` moved on *releases* only — the opposite of the "edge tracks mainline" intent — and the `--extra latest` workaround would have moved `:latest` from any branch or prerelease.
+  Fix, leaning: lift the `latestEligible` call out of the `if semverTags` block so the two `:latest` triggers fire independently of the semver fan-out — which is already how they're *documented* ("two independent triggers"). Then edge = `--semver-tags=false` + a properly-guarded `:latest`, no `--extra`.
+  Config-shaped alternative the user floated: a `.hanko.yaml` `docker.latest:` policy (`on-default-branch` | `on-release-tag` | `never`) so the behaviour is declared per-repo instead of reconstructed from three CLI flags at each call site.
+  Either way, `--extra latest` stops being the de-facto way to get an edge `:latest`; keep `--extra` for genuinely arbitrary tags.
+
 ### Edge cases worth covering in flows / smoke
 
 - Branch name with slashes, uppercase, underscores. *(covered: S4 sanitisation cases)*
