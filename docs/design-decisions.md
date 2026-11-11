@@ -50,6 +50,21 @@ Add to this as you go; revisit collectively rather than litigating each one in i
   `dockerTools.buildLayeredImage` has no `docker build` step to receive `--label` args, and the nix sandbox can't run hanko anyway.
   Not a code change — a documented caveat (README emitter notes) so the next nix consumer doesn't hunt for a stamp target that can't exist. Flagged by kestrel, which bakes OCI labels into the flake from the hanko-sealed `version` variable.
 
+- **D-022 — Docker semver refs only for releases; `:latest` decoupled from `--semver-tags` and off by default.**
+  Surfaced by taiga-backend's CI: after `v0.1.0`, every master push published `:0.1.1` / `:0.2.0`, moved `:0.2` / `:0`, and moved `:latest` — none of those versions released.
+  Root cause: mainline (`label: ""`) computes the *next* version release-shaped (no pre-release suffix), and `computeDockerTags` only checked `IsPreRelease`, so a release-shaped version was treated as a published one.
+  Fix: the `<full>` / `<major>.<minor>` / `<major>` fan-out requires `AtReleaseTag`; an untagged mainline build gets only `<branch>-<sha>`. Prereleases keep their unique `<full>` ref.
+  `:latest` moved out of the `if semverTags` block (resolves the socq parking-lot entry: edge = `--semver-tags=false --latest-on-default-branch`, no `--extra latest`), still guarded by non-prerelease.
+  `--latest-on-default-branch` now defaults to **false** — with it on, `--latest-on-release-tag` could never mean "release-only `:latest`". Both triggers are opt-in, per D-020's "build script says what it injects".
+  `hanko version` is unchanged: seal relies on mainline computing the release-shaped next version (`seal.refuse-prerelease`); only the emitter stopped treating it as already published.
+  No opt-in for the old "mainline is always the next release" publishing; add one if a caller turns out to want it.
+  **Breaking:** callers relying on the default mainline `:latest` must pass `--latest-on-default-branch`.
+
+- **D-023 — `tag --push` and `seal` (with a push remote) fetch remote tags before computing.**
+  A tagless CI checkout or a stale clone computes a version someone already released, and would try to tag and push it.
+  Fetch uses a non-forced `refs/tags/*:refs/tags/*` refspec: a local tag that disagrees with the remote's fails the release instead of being moved. Seal re-reads git info after the fetch so the version and tag-exists checks see the new tags.
+  Runs on `--dry-run` too, so the plan names the tag a real run would create. Local-only `hanko tag` (no `--push`) and `hanko version` don't touch the network.
+
 - **D-009 — Hardcode main/master as the only mainline branches. No `--default-branch` flag.**
   Org policy: `main` is the canonical name; `master` is kept for legacy.
   Anything else (`develop`, `trunk`, …) is outside hanko's convention and gets feature-branch treatment.
@@ -195,15 +210,6 @@ Add to this as you go; revisit collectively rather than litigating each one in i
   Today this is intentional: the CI flow is stamp-first then tag-last, so stamp can't require a pre-existing tag.
   But there may be a future "release pipeline" mode where stamp commands opt into requiring HEAD to be at a release tag.
   Park here; revisit if a concrete use case shows up.
-
-- **`:latest` is nested under `--semver-tags`, so edge publishing can't get a *guarded* `:latest` — decouple.**
-  Surfaced by socq's edge publish (proxmox-homelab `k8s-manifests/socq`, image from `soccer-boids`).
-  The natural non-release invocation is `--semver-tags=false` — you don't want semver refs on an edge build — but in `computeDockerTags` the `latestEligible` check lives *inside* the `if semverTags` block, so `--semver-tags=false` also silences `--latest-on-default-branch` (D-009).
-  Callers then reach for `--extra latest`, which appends the tag verbatim with **no** guard: not gated on main/master, not gated on non-prerelease (D-011).
-  Net effect in the wild: socq's master merges published only `:master-<sha>` (someone dropped the `--extra`), so `:latest` moved on *releases* only — the opposite of the "edge tracks mainline" intent — and the `--extra latest` workaround would have moved `:latest` from any branch or prerelease.
-  Fix, leaning: lift the `latestEligible` call out of the `if semverTags` block so the two `:latest` triggers fire independently of the semver fan-out — which is already how they're *documented* ("two independent triggers"). Then edge = `--semver-tags=false` + a properly-guarded `:latest`, no `--extra`.
-  Config-shaped alternative the user floated: a `.hanko.yaml` `docker.latest:` policy (`on-default-branch` | `on-release-tag` | `never`) so the behaviour is declared per-repo instead of reconstructed from three CLI flags at each call site.
-  Either way, `--extra latest` stops being the de-facto way to get an edge `:latest`; keep `--extra` for genuinely arbitrary tags.
 
 ### Edge cases worth covering in flows / smoke
 

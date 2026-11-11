@@ -757,20 +757,35 @@ assert_contains "dry-run announces change" "0.0.1 → 1.2.4" "$out"
 got=$(grep 'version = ' "$nixrepo/flake.nix")
 assert_contains "dry-run did not write" 'version = "0.0.1";' "$got"
 
-section "hanko version docker tags — non-prerelease on main"
+section "hanko version docker tags — untagged mainline"
+# 1.0.1 is computed but not released: no semver refs, and no :latest unless edge publishing asks for it.
+short=$(git -C "$repo" rev-parse --short HEAD)
 out=$("$HANKO" --repo "$repo" version docker tags ghcr.io/example/demo)
-expected="ghcr.io/example/demo:1.0.1
+assert_eq "untagged mainline: branch-sha only" "ghcr.io/example/demo:main-$short" "$out"
+
+out=$("$HANKO" --repo "$repo" version docker tags ghcr.io/example/demo --latest-on-release-tag)
+assert_eq "--latest-on-release-tag doesn't fire on mainline" "ghcr.io/example/demo:main-$short" "$out"
+
+out=$("$HANKO" --repo "$repo" version docker tags ghcr.io/example/demo --latest-on-default-branch --semver-tags=false)
+expected="ghcr.io/example/demo:latest
+ghcr.io/example/demo:main-$short"
+assert_eq "edge :latest independent of --semver-tags" "$expected" "$out"
+
+section "hanko version docker tags — at a release tag"
+git -C "$repo" checkout -q v1.0.0
+out=$("$HANKO" --repo "$repo" version docker tags ghcr.io/example/demo --latest-on-release-tag --branch-sha-tag=false)
+expected="ghcr.io/example/demo:1.0.0
 ghcr.io/example/demo:1.0
 ghcr.io/example/demo:1
-ghcr.io/example/demo:latest
-ghcr.io/example/demo:main-$(git -C "$repo" rev-parse --short HEAD)"
-assert_eq "full fan-out on mainline" "$expected" "$out"
+ghcr.io/example/demo:latest"
+assert_eq "full fan-out with release-only :latest" "$expected" "$out"
 
-out=$("$HANKO" --repo "$repo" version docker tags ghcr.io/example/demo --latest-on-default-branch=false --branch-sha-tag=false)
-expected="ghcr.io/example/demo:1.0.1
+out=$("$HANKO" --repo "$repo" version docker tags ghcr.io/example/demo --branch-sha-tag=false)
+expected="ghcr.io/example/demo:1.0.0
 ghcr.io/example/demo:1.0
 ghcr.io/example/demo:1"
-assert_eq "knobs turn off latest and branch-sha" "$expected" "$out"
+assert_eq "no :latest by default" "$expected" "$out"
+git -C "$repo" checkout -q main
 
 section "hanko version docker tags — pre-release"
 # feature/bar branches off main HEAD (which already has 1 commit past v1.0.0)

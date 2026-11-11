@@ -65,6 +65,13 @@ func Push(repo, remote, name string) error {
 	return err
 }
 
+// FetchTags pulls the remote's tags into refs/tags so version computation and the tag-exists checks see releases cut elsewhere.
+// The refspec is non-forced: a local tag that disagrees with the remote's fails the fetch rather than being silently moved.
+func FetchTags(repo, remote string) error {
+	_, err := run(repo, "fetch", "--quiet", "--no-tags", remote, "refs/tags/*:refs/tags/*")
+	return err
+}
+
 // EnsureAtHead is the idempotency-friendly compound operation:
 //   - if `name` already points at HEAD, no-op (returns alreadyExists=true, conflict=false)
 //   - if `name` exists pointing elsewhere, returns ErrTagConflict

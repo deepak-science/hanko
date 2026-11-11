@@ -30,6 +30,12 @@ var tagCmd = &cobra.Command{
 	Short:   "Create a git tag for the computed version",
 	GroupID: "stamp",
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Without the remote's tags we'd compute (and try to push) a version someone already released.
+		if tagPush {
+			if err := gittag.FetchTags(repoPath, tagRemote); err != nil {
+				return fmt.Errorf("fetch tags from %s: %w", tagRemote, err)
+			}
+		}
 		info, cfg, err := resolveInfo()
 		if err != nil {
 			return err

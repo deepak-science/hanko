@@ -117,9 +117,9 @@ go build -ldflags "$(hanko version go-ldflags --package main)" ./...
 Two subcommands, deliberately split so each composes independently:
 
 - [x] `hanko version docker tags <image>` — emits the full image-ref fan-out (one per line).
-  Non-prerelease on mainline: `<full>`, `<major>.<minor>`, `<major>`, `:latest`.
+  Non-prerelease release tag: `<full>`, `<major>.<minor>`, `<major>`; untagged mainline: none (D-022).
   Pre-release: only `<full>`.
-  Knobs: `--latest-on-default-branch=false`, `--branch-sha-tag=false`, repeatable `--extra <tag>`.
+  Knobs: `--latest-on-release-tag`, `--latest-on-default-branch`, `--semver-tags=false`, `--branch-sha-tag=false`, repeatable `--extra <tag>`.
   Replaces cicd's `compute-image-tags` composite.
 - [x] `hanko version docker labels` — emits `org.opencontainers.image.*` labels (stdout only).
   Always sets `version`, `revision`, `created`; `--source` and `--title` are caller-supplied.

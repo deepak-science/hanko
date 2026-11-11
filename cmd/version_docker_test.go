@@ -8,9 +8,15 @@ import (
 )
 
 func TestComputeDockerTags(t *testing.T) {
+	// Untagged mainline: release-shaped next version, but not released yet.
 	mainline := version.Version{
 		SemVer: "1.2.3", Major: 1, Minor: 2, Patch: 3,
 		BranchName: "main", ShortSha: "abc1234",
+	}
+	// Pre-first-release mainline: initial-version always carries a pre-release suffix.
+	mainlinePre := version.Version{
+		SemVer: "0.1.0-main.4", Major: 0, Minor: 1, Patch: 0,
+		BranchName: "main", ShortSha: "abc1234", IsPreRelease: true,
 	}
 	feature := version.Version{
 		SemVer: "1.2.3-feature-foo.3", Major: 1, Minor: 2, Patch: 3,
@@ -34,16 +40,37 @@ func TestComputeDockerTags(t *testing.T) {
 		want                                  []string
 	}{
 		{
-			name:   "mainline non-prerelease fans out with :latest",
+			// D-022: the computed next version isn't published, so no :1.2.3 / :1.2 / :1.
+			name:   "untagged mainline emits no semver refs",
 			v:      mainline,
-			latest: true, semver: true, branch: true,
-			want: []string{"1.2.3", "1.2", "1", "latest", "main-abc1234"},
+			semver: true, branch: true,
+			want: []string{"main-abc1234"},
 		},
 		{
-			name:   "mainline without latest flag omits :latest",
+			// The taiga-backend invocation: release-only :latest must not fire on mainline.
+			name:          "untagged mainline with --latest-on-release-tag: no :latest",
+			v:             mainline,
+			latestRelease: true, semver: true, branch: true,
+			want: []string{"main-abc1234"},
+		},
+		{
+			name:   "untagged mainline with --latest-on-default-branch: edge :latest",
 			v:      mainline,
-			latest: false, semver: true, branch: true,
-			want: []string{"1.2.3", "1.2", "1", "main-abc1234"},
+			latest: true, semver: true, branch: true,
+			want: []string{"latest", "main-abc1234"},
+		},
+		{
+			// Previously silenced because :latest lived inside the semver block.
+			name:   "edge :latest survives --semver-tags=false",
+			v:      mainline,
+			latest: true, semver: false, branch: true,
+			want: []string{"latest", "main-abc1234"},
+		},
+		{
+			name:   "pre-first-release mainline: full prerelease semver, no :latest",
+			v:      mainlinePre,
+			latest: true, semver: true, branch: true,
+			want: []string{"0.1.0-main.4", "main-abc1234"},
 		},
 		{
 			name:   "prerelease feature branch: only full semver + branch-sha",
@@ -52,17 +79,15 @@ func TestComputeDockerTags(t *testing.T) {
 			want: []string{"1.2.3-feature-foo.3", "feature-foo-abc1234"},
 		},
 		{
-			// The core issue #1 fix: a tag-push checkout (detached, BranchName
-			// sentinel) can opt into :latest via --latest-on-release-tag.
-			name:          "release tag with --latest-on-release-tag emits :latest",
+			name:          "release tag with --latest-on-release-tag fans out with :latest",
 			v:             releaseTag,
 			latestRelease: true, semver: true, branch: true,
 			want: []string{"1.2.3", "1.2", "1", "latest", "detached-abc1234"},
 		},
 		{
-			name:          "release tag without the flag does not emit :latest",
-			v:             releaseTag,
-			latestRelease: false, semver: true, branch: true,
+			name:   "release tag without either latest flag fans out without :latest",
+			v:      releaseTag,
+			semver: true, branch: true,
 			want: []string{"1.2.3", "1.2", "1", "detached-abc1234"},
 		},
 		{
@@ -73,18 +98,17 @@ func TestComputeDockerTags(t *testing.T) {
 			want: []string{"1.2.3", "1.2", "1", "detached-abc1234"},
 		},
 		{
-			// Non-prerelease guard still holds: a prerelease tag never moves :latest.
-			name:          "prerelease release tag never emits :latest",
-			v:             prereleaseTag,
-			latestRelease: true, semver: true, branch: true,
-			want: []string{"1.2.3-rc.1", "detached-abc1234"},
+			name:          "release tag with --semver-tags=false keeps :latest",
+			v:             releaseTag,
+			latestRelease: true, semver: false, branch: false,
+			want: []string{"latest"},
 		},
 		{
-			// The core issue #2 fix: suppress the semver fan-out, keep branch-sha.
-			name:   "semver-tags=false keeps only the branch-sha ref",
-			v:      mainline,
-			latest: true, semver: false, branch: true,
-			want: []string{"main-abc1234"},
+			// Non-prerelease guard still holds: a prerelease tag never moves :latest.
+			name:   "prerelease release tag never emits :latest",
+			v:      prereleaseTag,
+			latest: true, latestRelease: true, semver: true, branch: true,
+			want: []string{"1.2.3-rc.1", "detached-abc1234"},
 		},
 		{
 			name:   "semver-tags=false with extras",
@@ -93,9 +117,9 @@ func TestComputeDockerTags(t *testing.T) {
 			want: []string{"edge"},
 		},
 		{
-			name:   "extras appended after computed tags",
-			v:      mainline,
-			latest: true, semver: true, branch: false, extras: []string{"stable", "  ", "extra"},
+			name:          "extras appended after computed tags",
+			v:             releaseTag,
+			latestRelease: true, semver: true, branch: false, extras: []string{"stable", "  ", "extra"},
 			want: []string{"1.2.3", "1.2", "1", "latest", "stable", "extra"},
 		},
 	}
