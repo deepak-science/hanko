@@ -3,14 +3,21 @@
 # The seal pipeline:
 #   1. Pre-flight (refuses dirty worktree / detached HEAD / pre-release)
 #   2. Apply stamp-targets to the computed version
-#   3. Run seal.pre-commit hooks (none today)
+#   3. Run seal.pre-commit hooks (regenerate CHANGELOG.md)
 #   4. Single release commit
 #   5. Annotated tag (D-002 prefix mirroring)
 #   6. git push --atomic for commit + tag
 #
-# Everything else (commit-message, push-remote, bump-strategy, …) is at the
-# default — see `hanko config show` for the resolved view.
+# Everything else (commit-message, push-remote, …) is at the default — see `hanko config show` for the resolved view.
+# Already the default (D-016); pinned so this repo's commit convention is declared, not inherited.
+# feat!:/BREAKING CHANGE → major, feat: → minor, fix: → patch; a range with no signal falls back to mainline's patch increment.
+bump-strategy: conventional-commits
 stamp-targets:
   - path: flake.nix
     format: nix
     key: version
+seal:
+  pre-commit:
+    # Runs inside `nix develop` (seal.yml), where git-cliff is on PATH; the tag doesn't exist yet, so name it explicitly.
+    # RUST_LOG=error hides the per-run "N commits skipped" warning for pre-convention history (and the update notice); real errors still print.
+    - RUST_LOG=error git-cliff --tag v{semver} --output CHANGELOG.md

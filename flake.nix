@@ -151,6 +151,8 @@
             # back to `nix develop --command go run . ...` from outside the
             # devshell.
             pkgs.hanko
+            # Regenerates CHANGELOG.md from the `seal.pre-commit` hook in .hanko.yaml.
+            git-cliff
           ];
           shellHook = ''
             echo "hanko devshell"

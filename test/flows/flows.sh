@@ -359,15 +359,20 @@ assert_contains "embedded version=$expected_semver" "version=$expected_semver" "
 assert_contains "embedded commit=full sha" "commit=$(git -C "$repo" rev-parse HEAD)" "$embedded"
 assert_contains "embedded date=commit date" "date=2026-01-01T00:00:00" "$embedded"
 
-# 2. Docker tags — full fan-out on mainline.
-out=$("$HANKO" --repo "$repo" version docker tags ghcr.io/example/demo)
+# 2. Docker tags — untagged mainline gets only its branch-sha ref; the tag-push checkout gets the fan-out.
+out=$("$HANKO" --repo "$repo" version docker tags --latest-on-release-tag ghcr.io/example/demo)
 short=$(git -C "$repo" rev-parse --short HEAD)
-expected_tags="ghcr.io/example/demo:$expected_semver
+assert_eq "untagged mainline: no unreleased semver refs or :latest" "ghcr.io/example/demo:main-$short" "$out"
+
+git -C "$repo" checkout -q v1.1.0
+out=$("$HANKO" --repo "$repo" version docker tags --latest-on-release-tag ghcr.io/example/demo)
+expected_tags="ghcr.io/example/demo:1.1.0
 ghcr.io/example/demo:1.1
 ghcr.io/example/demo:1
 ghcr.io/example/demo:latest
-ghcr.io/example/demo:main-$short"
-assert_eq "docker tag fan-out on mainline" "$expected_tags" "$out"
+ghcr.io/example/demo:detached-$(git -C "$repo" rev-parse --short HEAD)"
+assert_eq "docker tag fan-out on the release tag" "$expected_tags" "$out"
+git -C "$repo" checkout -q main
 
 # 3. Docker labels — args mode.
 out=$("$HANKO" --repo "$repo" version docker labels --source https://example.com/demo --title demo)
@@ -440,6 +445,46 @@ assert_contains "bare remote has v1.0.1" "v1.0.1" "$got"
 # Idempotent: rerun --push on the same HEAD should no-op (already at tag).
 got=$("$HANKO" --repo "$repo" tag --push)
 assert_eq "rerun --push is idempotent" "v1.0.1" "$got"
+
+# ── S11 — Releasing from a clone that's missing the remote's tags ──────────
+# A tagless CI checkout (or a stale clone) would compute an already-released version; tag --push and seal fetch tags first.
+
+section "S11 — tag --push / seal fetch remote tags before computing"
+git -C "$repo" push -q origin v1.0.0
+tagless_clone() {
+  local dir
+  dir=$(mktemp -d)/clone
+  git clone -q -b main "$bare" "$dir"
+  git -C "$dir" config user.email t@e.invalid
+  git -C "$dir" config user.name t
+  git -C "$dir" config commit.gpgsign false
+  git -C "$dir" config tag.gpgsign false
+  git -C "$dir" tag -d v1.0.1 >/dev/null
+  printf "%s" "$dir"
+}
+
+stale=$(tagless_clone)
+commit "$stale" c3
+assert_eq "without the fetch, the clone computes the released 1.0.1" "1.0.1" "$("$HANKO" --repo "$stale" version)"
+
+got=$("$HANKO" --repo "$stale" tag --push --dry-run)
+assert_contains "tag --push fetches v1.0.1 and computes v1.0.2" "would create annotated tag v1.0.2" "$got"
+
+git -C "$stale" tag -d v1.0.1 >/dev/null
+got=$("$HANKO" --repo "$stale" seal --dry-run)
+assert_contains "seal fetches v1.0.1 and plans v1.0.2" "tag name:       v1.0.2" "$got"
+
+# A local tag that disagrees with the remote's must not be silently moved.
+diverged=$(tagless_clone)
+commit "$diverged" c3
+git -C "$diverged" tag -a v1.0.1 -m "local v1.0.1"
+set +e
+got=$("$HANKO" --repo "$diverged" tag --push 2>&1)
+code=$?
+set -e
+assert_exit "tag --push refuses when a local tag conflicts with the remote's" 1 "$code"
+assert_contains "error names the fetch" "fetch tags from origin" "$got"
+assert_eq "local tag left in place" "$(git -C "$diverged" rev-parse HEAD)" "$(git -C "$diverged" rev-list -n1 v1.0.1)"
 
 # ── summary ────────────────────────────────────────────────────────────────
 

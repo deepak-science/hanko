@@ -70,6 +70,17 @@ Resolve version, stamp repo, commit changes and atomically tag-and-push.
 			return fmt.Errorf("detached HEAD; seal needs a branch to push to")
 		}
 
+		// Without the remote's tags we'd compute (and try to push) a version someone already released.
+		// Re-read after fetching so the version and tag-exists checks below see them.
+		if remote := pushRemote(cfg); remote != "" {
+			if err := gittag.FetchTags(repoPath, remote); err != nil {
+				return fmt.Errorf("fetch tags from %s: %w", remote, err)
+			}
+			if info, err = gitinfo.Read(repoPath, cfg.TagMatch); err != nil {
+				return fmt.Errorf("read git info: %w", err)
+			}
+		}
+
 		// Resolve --initial up front so we can validate before doing work.
 		// Bootstrap-only, same constraints as `hanko tag --initial`.
 		var initialValue string
