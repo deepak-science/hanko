@@ -4,8 +4,8 @@
 # nukes and rebuilds. Output is gitignored.
 #
 # Used for hand-running hanko against realistic-shaped inputs (helm chart,
-# go program, container build context). Distinct from test/smoke/smoke.sh
-# which builds throwaway tmp repos for hermetic assertions.
+# go program, container build context). Distinct from the test/smoke/ Go tests,
+# which build throwaway tmp repos for hermetic assertions.
 #
 # Usage:
 #   test/fixtures/init.sh             # rebuild all fixtures

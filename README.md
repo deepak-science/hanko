@@ -173,7 +173,7 @@ Common tasks live in the `justfile`:
 
 - `just build` — build the binary via `nix build`
 - `just test` — run Go unit tests
-- `just smoke` — CLI smoke tests on minimal repos (verifies command shape, flag handling, exit codes)
+- `just smoke` — CLI smoke tests on minimal repos (verifies command shape, flag handling, exit codes); `HANKO=./result/bin/hanko just smoke` runs them against a built binary
 - `just flows` — CLI flow tests on mock repos with realistic tag histories (verifies outcomes on hotfix / release-branch / multi-tag / push-to-remote scenarios)
 - `just check-cli` — both `smoke` and `flows`
 - `just check` — `nix flake check`
