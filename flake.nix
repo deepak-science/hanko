@@ -111,16 +111,16 @@
       formatter = eachSystem (pkgs: treefmtEval.${pkgs.stdenv.hostPlatform.system}.config.build.wrapper);
       checks = eachSystem (pkgs: {
         formatting = treefmtEval.${pkgs.stdenv.hostPlatform.system}.config.build.check self;
-        smoke =
-          pkgs.runCommand "hanko-smoke"
-            {
-              nativeBuildInputs = [ pkgs.git ];
-            }
-            ''
-              export HOME=$TMPDIR
-              bash ${./test/smoke/smoke.sh} ${pkgs.hanko}/bin/hanko
-              touch $out
-            '';
+        # The package's own `go test ./...` runs smoke against a self-exec'd test binary; this re-runs it against the shipped binary.
+        smoke = pkgs.hanko.overrideAttrs {
+          pname = "hanko-smoke";
+          doCheck = true;
+          checkPhase = ''
+            runHook preCheck
+            HANKO=${pkgs.hanko}/bin/hanko go test -count=1 ./test/smoke/...
+            runHook postCheck
+          '';
+        };
         # Lint as a check: override the hanko derivation to swap go test for
         # golangci-lint in checkPhase. Reuses the vendored module setup from
         # goConfigHook so no network is needed inside the sandbox.
