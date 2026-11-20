@@ -26,7 +26,7 @@ These are wired together into:
 
 ## Install
 
-Prebuilt binaries for `linux-amd64` and `linux-arm64` are attached to every tagged release.
+Prebuilt binaries for `linux-amd64`, `linux-arm64` and `darwin-arm64` are attached to every tagged release.
 The install script fetches the binary for your platform, verifies it against the published `checksums.txt`, and drops it into `$HOME/.local/bin` (override with `-d` or `HANKO_INSTALL_DIR`):
 
 ```sh
@@ -41,6 +41,14 @@ curl -fsSL https://github.com/dmallubhotla/hanko/releases/latest/download/instal
 
 Or skip the script and grab `hanko-<target>` + `checksums.txt` from the [releases page](https://github.com/dmallubhotla/hanko/releases) directly.
 Nix users can `nix run github:dmallubhotla/hanko -- version` or add this flake as an input.
+
+### Homebrew (Apple silicon)
+
+```sh
+brew install deepak-science/tap/hanko
+```
+
+Installs `hanko` with shell completions. The release workflow updates the formula.
 
 ### Stamp shapes
 
