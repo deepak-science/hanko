@@ -14,7 +14,7 @@ usage() {
 		releases page, verifies it against the published checksums, and
 		installs it to a directory on your PATH.
 
-		Supported targets: linux-amd64, linux-arm64.
+		Supported targets: linux-amd64, linux-arm64, darwin-arm64.
 
 		Available options:
 		-h, --help                Print help
@@ -77,7 +77,8 @@ detect_target() {
 
   case "${os}" in
   Linux) os_tag='linux' ;;
-  *) fail "unsupported OS: ${os} (hanko ships linux builds only)" ;;
+  Darwin) os_tag='darwin' ;;
+  *) fail "unsupported OS: ${os} (hanko ships linux and darwin builds only)" ;;
   esac
 
   case "${arch}" in
@@ -88,8 +89,8 @@ detect_target() {
 
   _target="${os_tag}-${arch_tag}"
   case "${_target}" in
-  linux-amd64 | linux-arm64) ;;
-  *) fail "no prebuilt binary for ${_target} (supported: linux-amd64, linux-arm64)" ;;
+  linux-amd64 | linux-arm64 | darwin-arm64) ;;
+  *) fail "no prebuilt binary for ${_target} (supported: linux-amd64, linux-arm64, darwin-arm64)" ;;
   esac
 }
 

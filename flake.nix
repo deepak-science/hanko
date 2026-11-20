@@ -104,9 +104,27 @@
         hankoOverlay
       ];
 
-      packages = eachSystem (pkgs: {
-        default = pkgs.hanko;
-      });
+      packages = eachSystem (
+        pkgs:
+        {
+          default = pkgs.hanko;
+        }
+        // nixpkgs.lib.optionalAttrs pkgs.stdenv.hostPlatform.isLinux {
+          # Cross-built on Linux so releases don't need a macOS runner.
+          # Go's linker ad-hoc signs darwin/arm64 binaries, which is all Apple silicon needs to run them.
+          hanko-darwin-arm64 = pkgs.hanko.overrideAttrs {
+            GOOS = "darwin";
+            GOARCH = "arm64";
+            doCheck = false;
+            dontStrip = true;
+            # go install puts cross binaries in bin/darwin_arm64; completions can't be generated without running them.
+            postInstall = ''
+              mv $out/bin/darwin_arm64/hanko $out/bin/hanko
+              rmdir $out/bin/darwin_arm64
+            '';
+          };
+        }
+      );
 
       formatter = eachSystem (pkgs: treefmtEval.${pkgs.stdenv.hostPlatform.system}.config.build.wrapper);
       checks = eachSystem (pkgs: {
