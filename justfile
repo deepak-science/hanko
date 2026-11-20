@@ -13,7 +13,7 @@ test:
 
 # end-to-end CLI smoke tests (verifies command shape on minimal repos)
 smoke:
-    nix develop --command bash test/smoke/smoke.sh
+    nix develop --command go test -count=1 ./test/smoke/...
 
 # end-to-end flow tests (mocks realistic tag histories, multi-branch scenarios, push-to-remote, end-to-end stamping)
 flows:

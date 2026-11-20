@@ -167,7 +167,7 @@ Add to this as you go; revisit collectively rather than litigating each one in i
 - **Idempotency wins over dirty-refusal.**
   If the requested tag is already on HEAD, `hanko tag` exits 0 even with a dirty worktree.
   Rationale: the desired side effect already exists; refusing serves no one.
-  Surfaced by smoke test `test/smoke/smoke.sh` early — left in deliberately.
+  Surfaced by the smoke tests (then `test/smoke/smoke.sh`) early — left in deliberately.
 - **`--push` pushes only the computed tag**, not all tags.
   cicd's `tag.yml` uses `git push --tags` (push everything) for simplicity.
   Hanko's scoped push is strictly safer; flag this as a behaviour diff when migrating that workflow.

@@ -23,7 +23,15 @@ type Builder struct {
 // reading state from it.
 func New(t *testing.T) *Builder {
 	t.Helper()
-	dir := t.TempDir()
+	return NewAt(t, t.TempDir())
+}
+
+// NewAt is New rooted at dir (created if missing), e.g. a repo nested inside another.
+func NewAt(t *testing.T, dir string) *Builder {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	b := &Builder{t: t, dir: dir}
 	b.Git("init", "--initial-branch=main", "-q")
 	b.Git("config", "user.email", "test@example.invalid")
@@ -31,6 +39,16 @@ func New(t *testing.T) *Builder {
 	b.Git("config", "commit.gpgsign", "false")
 	b.Git("config", "tag.gpgsign", "false")
 	return b
+}
+
+// NewBare creates an empty bare repo in t.TempDir() and returns its path, for use as a push remote.
+func NewBare(t *testing.T) string {
+	t.Helper()
+	dir := filepath.Join(t.TempDir(), "origin.git")
+	if out, err := exec.Command("git", "init", "-q", "--bare", dir).CombinedOutput(); err != nil {
+		t.Fatalf("git init --bare failed: %v\n%s", err, out)
+	}
+	return dir
 }
 
 // Dir returns the absolute path to the repo root.
@@ -66,23 +84,47 @@ func (b *Builder) Commit(msg string) *Builder {
 	return b
 }
 
+// CommitAll stages everything in the worktree and commits it with msg.
+func (b *Builder) CommitAll(msg string) *Builder {
+	b.t.Helper()
+	b.Git("add", "-A")
+	b.Git("commit", "-m", msg, "-q")
+	return b
+}
+
 // Tag creates a lightweight tag at HEAD.
 func (b *Builder) Tag(name string) *Builder {
+	b.t.Helper()
 	b.Git("tag", name)
 	return b
 }
 
 // Checkout creates and switches to a new branch.
 func (b *Builder) Checkout(branch string) *Builder {
+	b.t.Helper()
 	b.Git("checkout", "-q", "-b", branch)
 	return b
 }
 
-// WriteFile drops a file with the given content into the repo (untracked).
+// WriteFile drops a file with the given content into the repo (untracked), creating parent dirs.
 func (b *Builder) WriteFile(name, content string) *Builder {
 	b.t.Helper()
-	if err := os.WriteFile(filepath.Join(b.dir, name), []byte(content), 0o644); err != nil {
+	p := filepath.Join(b.dir, name)
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		b.t.Fatal(err)
+	}
+	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
 		b.t.Fatal(err)
 	}
 	return b
+}
+
+// ReadFile returns the contents of a file in the repo.
+func (b *Builder) ReadFile(name string) string {
+	b.t.Helper()
+	data, err := os.ReadFile(filepath.Join(b.dir, name))
+	if err != nil {
+		b.t.Fatal(err)
+	}
+	return string(data)
 }

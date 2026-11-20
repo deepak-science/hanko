@@ -3,7 +3,7 @@
 # Full-flow tests.
 # Each scenario builds a mock repo with realistic tag history and asserts what hanko does at multiple points in that history.
 #
-# Distinct from `test/smoke/smoke.sh`, which verifies command shape on minimal repos.
+# Distinct from the `test/smoke/` Go tests, which verifies command shape on minimal repos.
 # Flows verify *outcomes* on real-looking inputs: pre-existing tags, multiple branches, release-branch maintenance, detached HEADs at tag pushes, push-to-remote, end-to-end stamping pipelines.
 #
 # Usage:
@@ -27,8 +27,6 @@ fi
 }
 
 # ── tiny assertion framework ───────────────────────────────────────────────
-# Same shape as smoke.sh — kept duplicated rather than extracted because the
-# two scripts have different lifetimes and shouldn't be coupled.
 
 pass=0
 fail=0
